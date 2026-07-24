@@ -1,0 +1,27 @@
+{
+  "name": "github-osint-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub OSINT Threat Intelligence Platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run start:dev -w api",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w api && npm run build -w web",
+    "build:api": "npm run build -w api",
+    "build:web": "npm run build -w web",
+    "lint": "npm run lint -w api && npm run lint -w web",
+    "test": "npm run test -w api && npm run test -w web --if-present",
+    "test:api": "npm run test -w api",
+    "format": "npm run format -w api --if-present",
+    "seed": "npm run seed -w api",
+    "typecheck": "npm run typecheck -w api --if-present && npm run typecheck -w web --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

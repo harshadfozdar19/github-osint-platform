@@ -1,0 +1,70 @@
+# Local MongoDB + Redis for development
+# Start with: docker compose up -d
+# (Requires Docker Desktop installed)
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: osint-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: github-osint
+
+  redis:
+    image: redis:7-alpine
+    container_name: osint-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  # Optional: run API in Docker after building
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ["full"]
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/github-osint
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: local-dev-secret-change-me-32chars-min
+      CORS_ORIGIN: http://localhost:3000
+      SEED_ON_BOOT: "true"
+      ENABLE_QUEUE_WORKERS: "false"
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    depends_on:
+      - mongo
+      - redis
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ["full"]
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/github-osint
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: local-dev-secret-change-me-32chars-min
+      ENABLE_QUEUE_WORKERS: "true"
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    depends_on:
+      - mongo
+      - redis
+
+volumes:
+  mongo_data:
+  redis_data:

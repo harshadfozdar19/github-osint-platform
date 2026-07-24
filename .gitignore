@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Builds
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+apps/*/.env
+apps/*/.env.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test / cache
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Docker volumes
+mongo-data/
+
+# Misc
+*.pem
+.vercel
