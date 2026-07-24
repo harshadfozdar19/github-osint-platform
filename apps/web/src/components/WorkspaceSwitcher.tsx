@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 import {
   api,
   getWorkspaceId,
+  getWorkspacesCache,
   setWorkspaceId,
+  setWorkspacesCache,
   WorkspaceSummary,
 } from '@/lib/api';
-
-let cachedWorkspacesPromise: Promise<WorkspaceSummary[]> | null = null;
 
 export function WorkspaceSwitcher() {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -17,10 +17,12 @@ export function WorkspaceSwitcher() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!cachedWorkspacesPromise) {
-      cachedWorkspacesPromise = api<WorkspaceSummary[]>('/workspaces', { workspace: false });
+    let promise = getWorkspacesCache<WorkspaceSummary[]>();
+    if (!promise) {
+      promise = api<WorkspaceSummary[]>('/workspaces', { workspace: false });
+      setWorkspacesCache(promise);
     }
-    cachedWorkspacesPromise
+    promise
       .then((list) => {
         setWorkspaces(list);
         const saved = getWorkspaceId();
@@ -34,7 +36,7 @@ export function WorkspaceSwitcher() {
         }
       })
       .catch((err) => {
-        cachedWorkspacesPromise = null;
+        setWorkspacesCache(null);
         setError(err instanceof Error ? err.message : 'Failed to load workspaces');
       })
       .finally(() => setLoading(false));
@@ -47,7 +49,7 @@ export function WorkspaceSwitcher() {
         method: 'POST',
         workspace: false,
       });
-      cachedWorkspacesPromise = null;
+      setWorkspacesCache(null);
       setWorkspaceId(id);
       setCurrentId(id);
       // Reload tenant-scoped pages with the new workspace context.

@@ -16,8 +16,22 @@ function getToken(): string | null {
   return localStorage.getItem('accessToken');
 }
 
+// Cross-request caches keyed to the current identity. Anything cached here
+// must be invalidated in setToken() below, since that's the single place
+// login/register/logout all funnel through — otherwise a client-side route
+// change (no full page reload) after switching accounts can keep serving
+// data fetched under the previous identity.
+let workspacesCache: Promise<unknown> | null = null;
+export function getWorkspacesCache<T>(): Promise<T> | null {
+  return workspacesCache as Promise<T> | null;
+}
+export function setWorkspacesCache<T>(promise: Promise<T> | null) {
+  workspacesCache = promise;
+}
+
 export function setToken(token: string | null) {
   if (typeof window === 'undefined') return;
+  workspacesCache = null;
   if (token) localStorage.setItem('accessToken', token);
   else {
     localStorage.removeItem('accessToken');
