@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity } from 'lucide-react';
-import { api, AuthResponse, setToken, setWorkspaceId } from '@/lib/api';
+import { api, AuthResponse } from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -19,14 +19,12 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await api<AuthResponse>('/auth/register', {
+      await api<AuthResponse>('/auth/register', {
         method: 'POST',
         auth: false,
         body: JSON.stringify({ name, email, password }),
       });
-      setToken(res.accessToken);
-      if (res.defaultWorkspaceId) setWorkspaceId(res.defaultWorkspaceId);
-      router.push('/dashboard');
+      router.push('/login?registered=1');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
