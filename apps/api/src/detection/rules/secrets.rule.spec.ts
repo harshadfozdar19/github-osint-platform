@@ -62,8 +62,13 @@ describe('secretDetectionRule', () => {
           // Split into concatenated parts so no single literal substring in
           // this file matches a real-token pattern (avoids tripping secret
           // scanners on push) while the resulting fixture value is unchanged.
-          'SLACK=' + 'xoxb-1234567890-1234567890123-' + 'abcdefghijklmnopqrstuvwx',
-          'DISCORD=' + 'MTAxMjM0NTY3ODkwMTIzNDU2Nw' + '.GaBcDe.' + 'fGhIjKlMnOpQrStUvWxYz1234567890AbCdEf',
+          'SLACK=' +
+            'xoxb-1234567890-1234567890123-' +
+            'abcdefghijklmnopqrstuvwx',
+          'DISCORD=' +
+            'MTAxMjM0NTY3ODkwMTIzNDU2Nw' +
+            '.GaBcDe.' +
+            'fGhIjKlMnOpQrStUvWxYz1234567890AbCdEf',
         ].join('\n'),
         'firebase-service.json',
       ),
