@@ -245,7 +245,7 @@ All GitHub traffic goes through a single managed client (`GitHubHttpClient`). No
 | Per-workspace tokens | A workspace using its own GitHub token gets fully separate quota tracking — its usage never competes with, or is blocked by, the shared token's state |
 | Conditional GETs | ETag / `If-None-Match` for content endpoints |
 | Observability | Structured logs (no tokens) + counters; `GET /api/v1/github/rate-limit` |
-| Redis command volume | Every call re-checks pause/quota state in Redis before proceeding; these reads are cached in-process for `GITHUB_RATE_LIMIT_CACHE_MS` (default 1s) so a burst of calls collapses into one Redis round trip instead of one per call — safe since none of this needs millisecond freshness |
+| Redis command volume | Every call re-checks pause/quota state in Redis before proceeding; these reads are cached in-process for `GITHUB_RATE_LIMIT_CACHE_MS` (default 1s) so a burst of calls collapses into one Redis round trip instead of one per call. Writes are batched the same way: request-count metrics accumulate in memory and flush periodically instead of one write per call, and rate-limit snapshot writes are throttled to the same interval — except when remaining quota nears the pause threshold, which always flushes immediately so pause detection is never delayed |
 
 The **GitHub API quota** panel on the dashboard shows this live: `CORE` is GitHub's general REST quota (repo/content fetches, 5,000/hr for an authenticated token), `SEARCH` is the separate, stricter quota for `/search/*` calls, `WORKSPACE BUDGET` only applies to workspaces still on the shared token (a fairness cap so one team can't starve another's share of the *shared* token), and `PAUSED SCANS` shows how many scans are currently waiting out a rate-limit pause.
 
