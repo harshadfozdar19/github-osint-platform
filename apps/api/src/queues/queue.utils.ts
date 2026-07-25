@@ -57,9 +57,15 @@ export function defaultJobOptions(priority = 5) {
  * crashed job a minute or two later is a non-issue for this app's traffic.
  */
 export function sharedWorkerTuning() {
+  // stalledInterval is genuinely milliseconds, but BullMQ's `drainDelay` is
+  // documented in *seconds* ("Number of seconds to long poll for jobs when
+  // the queue is empty") — the env var stays in ms for consistency with
+  // every other QUEUE_*_MS setting, and gets converted here.
   return {
     stalledInterval: Number(process.env.QUEUE_STALLED_INTERVAL_MS || 120_000),
-    drainDelay: Number(process.env.QUEUE_DRAIN_DELAY_MS || 15_000),
+    drainDelay: Math.round(
+      Number(process.env.QUEUE_DRAIN_DELAY_MS || 15_000) / 1000,
+    ),
   };
 }
 
