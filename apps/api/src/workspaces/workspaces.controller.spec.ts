@@ -5,9 +5,7 @@ import { GitHubClientError } from '../github/github.errors';
 describe('WorkspacesController.setGithubToken', () => {
   const user = { id: 'user-1' } as never;
 
-  function build(overrides?: {
-    refreshError?: unknown;
-  }) {
+  function build(overrides?: { refreshError?: unknown }) {
     const workspacesService = {
       setGithubToken: jest.fn().mockResolvedValue({ configured: true }),
       clearGithubToken: jest.fn().mockResolvedValue({ configured: false }),
@@ -29,7 +27,7 @@ describe('WorkspacesController.setGithubToken', () => {
 
     const result = await controller.setGithubToken(user, 'ws-1', {
       token: 'ghp_validtoken',
-    } as never);
+    });
 
     expect(workspacesService.setGithubToken).toHaveBeenCalledWith(
       'user-1',
@@ -49,7 +47,7 @@ describe('WorkspacesController.setGithubToken', () => {
     await expect(
       controller.setGithubToken(user, 'ws-1', {
         token: 'ghp_badtoken',
-      } as never),
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(workspacesService.clearGithubToken).toHaveBeenCalledWith(
@@ -65,7 +63,7 @@ describe('WorkspacesController.setGithubToken', () => {
 
     const result = await controller.setGithubToken(user, 'ws-1', {
       token: 'ghp_validtoken',
-    } as never);
+    });
 
     expect(workspacesService.clearGithubToken).not.toHaveBeenCalled();
     expect(result).toEqual({ configured: true });

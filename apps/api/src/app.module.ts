@@ -17,6 +17,7 @@ import { SeedModule } from './seed/seed.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { HealthController } from './health/health.controller';
 import { KeywordsModule } from './keywords/keywords.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -51,7 +52,7 @@ import { KeywordsModule } from './keywords/keywords.module';
     SeedModule,
     KeywordsModule,
   ],
-  controllers: [HealthController],
+  controllers: [AppController, HealthController],
   providers: [
     {
       provide: APP_GUARD,
