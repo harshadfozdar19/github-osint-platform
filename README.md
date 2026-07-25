@@ -327,8 +327,11 @@ All routes are prefixed with `/api/v1` and documented in Swagger.
 | GET | `/github/rate-limit` | Yes | GitHub quota / budget / pause status |
 | GET | `/workspaces` | Yes | List workspaces you belong to |
 | POST | `/workspaces` | Yes | Create a workspace (you become its owner) |
+| GET | `/workspaces/:id` | Yes | Get a workspace if you're a member |
+| POST | `/workspaces/:id/switch` | Yes | Validate membership and return workspace context (powers the workspace switcher) |
 | GET/PATCH/DELETE | `/workspaces/:id/github-token` | Yes | Manage this workspace's own GitHub token |
 | GET | `/health` | No | Health check |
+| GET | `/` | No | Friendly pointer (dashboard URL, docs, health) — not under `/api/v1`, excluded from Swagger |
 
 ## Detection & risk scoring
 
