@@ -23,7 +23,7 @@ import type { TenantContext } from '../tenancy/tenancy.decorators';
 import { WORKSPACE_HEADER } from '../common/enums';
 import { CreateBrandDto, UpdateBrandFullDto } from './dto/create-brand.dto';
 
-@ApiTags('brands', 'companies')
+@ApiTags('brands')
 @ApiBearerAuth()
 @ApiSecurity('workspace')
 @ApiHeader({ name: WORKSPACE_HEADER, required: true })
