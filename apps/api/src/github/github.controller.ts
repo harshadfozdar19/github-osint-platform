@@ -1,9 +1,8 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiHeader,
   ApiOperation,
-  ApiQuery,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
@@ -22,28 +21,6 @@ import { GitHubService } from './github.service';
 @Controller('github')
 export class GitHubController {
   constructor(private readonly github: GitHubService) {}
-
-  @Get('search')
-  @ApiOperation({ summary: 'Search GitHub repositories directly' })
-  @ApiQuery({ name: 'q', required: true })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'type', required: false, enum: ['repositories', 'code'] })
-  async search(
-    @CurrentTenant() tenant: TenantContext,
-    @Query('q') q: string,
-    @Query('page') page = '1',
-    @Query('type') type: 'repositories' | 'code' = 'repositories',
-  ) {
-    const p = Math.max(1, Number(page) || 1);
-    if (type === 'code') {
-      return this.github.searchCode(q, p, 10, {
-        workspaceId: tenant.workspaceId,
-      });
-    }
-    return this.github.searchRepositories(q, p, 10, {
-      workspaceId: tenant.workspaceId,
-    });
-  }
 
   @Get('rate-limit')
   @ApiOperation({
