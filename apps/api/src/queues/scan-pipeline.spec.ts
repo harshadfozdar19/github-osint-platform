@@ -203,4 +203,75 @@ describe('ScanPipelineService detection with mocked content', () => {
     expect(result.shouldAlert).toBe(false);
     expect(existing.save).toHaveBeenCalled();
   });
+
+  it('never deletes old detections when re-inserting fails for an existing finding', async () => {
+    const engine = new DetectionEngine();
+    const scoring = new RiskScoringService();
+    const existing = {
+      _id: new Types.ObjectId(),
+      status: FindingStatus.OPEN,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const findingModel = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      find: jest.fn().mockReturnValue({
+        exec: () => Promise.resolve([]),
+      }),
+    };
+    const detectionModel = {
+      deleteMany: jest.fn(),
+      // Simulates a transient Mongo failure on the write.
+      insertMany: jest.fn().mockRejectedValue(new Error('write failed')),
+    };
+    const repoModel = {};
+    const github = {
+      listRootPaths: jest.fn(),
+      getReadme: jest.fn(),
+      getSmallTextFile: jest.fn(),
+    };
+
+    const pipeline = new ScanPipelineService(
+      repoModel as never,
+      findingModel as never,
+      detectionModel as never,
+      github as never,
+      engine,
+      scoring,
+      { get: () => undefined } as never,
+      { shouldAttempt: () => Promise.resolve(false) } as never,
+    );
+
+    await expect(
+      pipeline.runDetectionAndPersist({
+        workspaceId: new Types.ObjectId().toHexString(),
+        scanJobId: new Types.ObjectId().toHexString(),
+        repositoryDbId: new Types.ObjectId().toHexString(),
+        githubId: 42,
+        fullName: 'evil/phonepe-apk',
+        brandName: 'PhonePe',
+        ctx: {
+          fullName: 'evil/phonepe-apk',
+          owner: 'evil',
+          name: 'phonepe-apk',
+          description: 'PhonePe login phishing APK mod',
+          topics: ['apk', 'phishing'],
+          language: 'Java',
+          stars: 0,
+          forks: 0,
+          isFork: false,
+          githubCreatedAt: new Date(),
+          filePaths: ['app.apk', 'README.md'],
+          readmeText: 'phishing kit\nAWS_KEY=AKIAIOSFODNN7EXAMPLE',
+          smallFileTexts: [],
+          matchedBrandName: 'PhonePe',
+          matchedBrandAliases: ['phonepe'],
+        },
+      }),
+    ).rejects.toThrow('write failed');
+
+    // The finding's metadata may already be saved by this point, but its
+    // old detections must survive an insert failure - deleteMany must
+    // never run before insertMany has actually succeeded.
+    expect(detectionModel.deleteMany).not.toHaveBeenCalled();
+  });
 });

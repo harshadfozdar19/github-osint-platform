@@ -490,10 +490,6 @@ export class ScanPipelineService {
       await existing.save();
       finding = existing;
       updated = 1;
-      await this.detectionModel.deleteMany({
-        findingId: finding._id,
-        workspaceId: ws,
-      });
     } else {
       finding = await this.findingModel.create({
         workspaceId: ws,
@@ -517,7 +513,12 @@ export class ScanPipelineService {
       findingsNew = 1;
     }
 
-    await this.detectionModel.insertMany(
+    // Insert the fresh detections *before* removing the old ones. If the
+    // insert throws for any reason (a bad document, a transient Mongo
+    // error), the finding must not end up with zero supporting evidence -
+    // deleting first and inserting second can leave exactly that state,
+    // since the finding's own metadata above is already saved by then.
+    const inserted = await this.detectionModel.insertMany(
       detections.map((d) => ({
         workspaceId: ws,
         findingId: finding._id,
@@ -534,6 +535,11 @@ export class ScanPipelineService {
         matchedText: d.matchedText,
       })),
     );
+    await this.detectionModel.deleteMany({
+      findingId: finding._id,
+      workspaceId: ws,
+      _id: { $nin: inserted.map((d) => d._id) },
+    });
 
     const findingsResolved = await this.resolveMissingFindings(
       ws,
