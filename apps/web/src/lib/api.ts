@@ -229,6 +229,10 @@ export interface Detection {
   evidence: string;
   explanation: string;
   riskContribution: number;
+  /** Only set for file-content-based rules (secrets, obfuscated commands) - metadata-based rules (impersonation, phishing, etc.) have no single file/line. */
+  file?: string;
+  lineNumber?: number;
+  matchedText?: string;
 }
 
 export interface ScanJob {

@@ -214,7 +214,11 @@ export default function FindingDetailPage() {
             ) : null}
 
             <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-5">
-              <h3 className="text-sm font-medium mb-3">Triggered rules</h3>
+              <h3 className="text-sm font-medium mb-1">Triggered rules</h3>
+              <p className="text-xs text-[var(--muted)] mb-3">
+                Every rule that fired, with exactly what was matched and, for
+                file-based rules, precisely where.
+              </p>
               <ul className="space-y-3">
                 {(finding.detections || []).map((d) => (
                   <li key={d._id || d.ruleId} className="border border-[var(--border)] rounded-md p-3">
@@ -225,10 +229,48 @@ export default function FindingDetailPage() {
                         confidence {(d.confidence * 100).toFixed(0)}% · +{d.riskContribution} pts
                       </span>
                     </div>
-                    <p className="mt-2 text-sm">{d.explanation}</p>
+
+                    {d.file ? (
+                      <p className="mt-2 text-xs">
+                        <span className="text-[var(--muted)]">Found in: </span>
+                        {repo?.url ? (
+                          <a
+                            href={`${repo.url}/blob/HEAD/${d.file}${d.lineNumber ? `#L${d.lineNumber}` : ''}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-[family-name:var(--font-mono)] text-[var(--accent)] hover:underline"
+                          >
+                            {d.file}
+                            {d.lineNumber ? `:${d.lineNumber}` : ''}
+                          </a>
+                        ) : (
+                          <span className="font-[family-name:var(--font-mono)]">
+                            {d.file}
+                            {d.lineNumber ? `:${d.lineNumber}` : ''}
+                          </span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-[var(--muted)]">
+                        Based on repository metadata (name, description, topics) - not tied to a
+                        single file.
+                      </p>
+                    )}
+
+                    <p className="mt-2 text-sm">
+                      <span className="text-[var(--muted)]">Why flagged: </span>
+                      {d.explanation}
+                    </p>
+
                     <p className="mt-2 text-xs font-[family-name:var(--font-mono)] text-[var(--muted)] break-all">
                       Evidence: {d.evidence}
                     </p>
+
+                    {d.matchedText && d.matchedText !== d.evidence ? (
+                      <p className="mt-1 text-xs font-[family-name:var(--font-mono)] text-[var(--text)] break-all">
+                        Matched: {d.matchedText}
+                      </p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
