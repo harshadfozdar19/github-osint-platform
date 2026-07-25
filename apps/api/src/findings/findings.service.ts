@@ -115,7 +115,11 @@ export class FindingsService {
 
     const detections = await this.detectionModel
       .find({
-        findingId: id,
+        // Must be explicitly cast: unlike the `_id` filter above, Mongoose
+        // does not reliably auto-cast a plain string for a regular
+        // ObjectId-typed field, so an uncast string here silently matches
+        // nothing even when matching detections exist.
+        findingId: new Types.ObjectId(id),
         workspaceId: new Types.ObjectId(workspaceId),
       })
       .lean()
