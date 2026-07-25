@@ -52,9 +52,14 @@ export class CloneScanService {
   constructor(private readonly config: ConfigService) {}
 
   isEnabled(): boolean {
-    return (
-      String(this.config.get('ENABLE_CLONE_SCAN')).toLowerCase() === 'true'
-    );
+    // Default-on: bypasses the GitHub REST client (and all of its Redis
+    // rate-limit/concurrency bookkeeping) entirely for eligible repos, which
+    // is what keeps a large scan from burning through a metered Redis
+    // plan's command budget. Fails closed either way, so an explicit
+    // `false` (or a missing git binary at runtime) just falls back to the
+    // existing REST-based fetch with no behavior change.
+    const raw = this.config.get('ENABLE_CLONE_SCAN');
+    return raw === undefined || String(raw).toLowerCase() !== 'false';
   }
 
   async shouldAttempt(sizeKb: number | undefined): Promise<boolean> {

@@ -197,6 +197,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  GITHUB_RATE_LIMIT_CACHE_MS?: string;
+
+  @IsOptional()
+  @IsString()
   GITHUB_WORKSPACE_DAILY_BUDGET?: string;
 
   @IsOptional()

@@ -15,12 +15,29 @@ import {
 export class GitHubRateLimitStore implements OnModuleDestroy {
   private readonly logger = new Logger(GitHubRateLimitStore.name);
   private readonly redis: Redis;
+  /**
+   * Every single GitHub call re-reads pause/snapshot state before it's
+   * allowed to proceed (`enforcePauseAndQuota`), which during a large scan
+   * means these three reads dominate Redis command volume. None of them
+   * need millisecond freshness — pausing a worker a second late is a
+   * non-issue given the buffer already built into the pause thresholds —
+   * so a short in-memory TTL collapses repeated reads within a burst of
+   * calls into a single Redis round trip.
+   */
+  private readonly shortCache = new Map<
+    string,
+    { value: unknown; expiresAt: number }
+  >();
+  private readonly shortCacheTtlMs: number;
 
   constructor(private readonly config: ConfigService) {
     this.redis = createRedisFromConfig(config);
     this.redis.on('error', (err) => {
       this.logger.warn(`Redis error (rate-limit store): ${err.message}`);
     });
+    this.shortCacheTtlMs = Number(
+      config.get('GITHUB_RATE_LIMIT_CACHE_MS') || 1000,
+    );
   }
 
   get client(): Redis {
@@ -31,20 +48,35 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
     await this.redis.quit().catch(() => undefined);
   }
 
+  private async cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.shortCache.get(key);
+    if (hit && hit.expiresAt > Date.now()) return hit.value as T;
+    const value = await load();
+    this.shortCache.set(key, {
+      value,
+      expiresAt: Date.now() + this.shortCacheTtlMs,
+    });
+    return value;
+  }
+
   async getSnapshot(
     scope: TokenScope,
     resource: GitHubResource,
   ): Promise<GitHubRateLimitSnapshot | null> {
-    const raw = await this.redis.hgetall(REDIS_KEYS.rateLimit(scope, resource));
-    if (!raw || !raw.limit) return null;
-    return {
-      resource,
-      limit: Number(raw.limit) || 0,
-      remaining: Number(raw.remaining) || 0,
-      used: Number(raw.used) || 0,
-      resetAt: Number(raw.resetAt) || 0,
-      updatedAt: Number(raw.updatedAt) || 0,
-    };
+    return this.cached(`snapshot:${scope}:${resource}`, async () => {
+      const raw = await this.redis.hgetall(
+        REDIS_KEYS.rateLimit(scope, resource),
+      );
+      if (!raw || !raw.limit) return null;
+      return {
+        resource,
+        limit: Number(raw.limit) || 0,
+        remaining: Number(raw.remaining) || 0,
+        used: Number(raw.used) || 0,
+        resetAt: Number(raw.resetAt) || 0,
+        updatedAt: Number(raw.updatedAt) || 0,
+      };
+    });
   }
 
   async saveSnapshot(
@@ -69,31 +101,33 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
   }
 
   async getPause(scope: TokenScope): Promise<GitHubPauseState> {
-    const raw = await this.redis.hgetall(REDIS_KEYS.pause(scope));
-    if (!raw || !raw.pausedUntil) {
+    return this.cached(`pause:${scope}`, async () => {
+      const raw = await this.redis.hgetall(REDIS_KEYS.pause(scope));
+      if (!raw || !raw.pausedUntil) {
+        return {
+          paused: false,
+          pausedUntil: null,
+          reason: null,
+          resource: null,
+        };
+      }
+      const pausedUntil = Number(raw.pausedUntil) || 0;
+      if (pausedUntil <= Date.now()) {
+        await this.clearPause(scope);
+        return {
+          paused: false,
+          pausedUntil: null,
+          reason: null,
+          resource: null,
+        };
+      }
       return {
-        paused: false,
-        pausedUntil: null,
-        reason: null,
-        resource: null,
+        paused: true,
+        pausedUntil,
+        reason: raw.reason || 'GitHub rate limit',
+        resource: (raw.resource as GitHubResource) || null,
       };
-    }
-    const pausedUntil = Number(raw.pausedUntil) || 0;
-    if (pausedUntil <= Date.now()) {
-      await this.clearPause(scope);
-      return {
-        paused: false,
-        pausedUntil: null,
-        reason: null,
-        resource: null,
-      };
-    }
-    return {
-      paused: true,
-      pausedUntil,
-      reason: raw.reason || 'GitHub rate limit',
-      resource: (raw.resource as GitHubResource) || null,
-    };
+    });
   }
 
   async setPause(
@@ -116,14 +150,16 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
   }
 
   async getSecondaryRetryAfterUntil(scope: TokenScope): Promise<number | null> {
-    const raw = await this.redis.get(REDIS_KEYS.secondary(scope));
-    if (!raw) return null;
-    const until = Number(raw);
-    if (!Number.isFinite(until) || until <= Date.now()) {
-      await this.redis.del(REDIS_KEYS.secondary(scope));
-      return null;
-    }
-    return until;
+    return this.cached(`secondary:${scope}`, async () => {
+      const raw = await this.redis.get(REDIS_KEYS.secondary(scope));
+      if (!raw) return null;
+      const until = Number(raw);
+      if (!Number.isFinite(until) || until <= Date.now()) {
+        await this.redis.del(REDIS_KEYS.secondary(scope));
+        return null;
+      }
+      return until;
+    });
   }
 
   async setSecondaryRetryAfterUntil(
