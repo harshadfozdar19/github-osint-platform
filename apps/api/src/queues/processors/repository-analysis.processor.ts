@@ -11,13 +11,19 @@ import { ScanStateService } from '../../scans/scan-state.service';
 import { ScanPipelineService } from '../../scans/scan-pipeline.service';
 import { IncrementalScanService } from '../../scans/incremental-scan.service';
 import { GitHubService } from '../../github/github.service';
-import { safeJobError, isFinalAttempt, withJobTimeout } from '../queue.utils';
+import {
+  safeJobError,
+  isFinalAttempt,
+  withJobTimeout,
+  sharedWorkerTuning,
+} from '../queue.utils';
 import { delayJobForGitHubQuota } from '../github-job.utils';
 import { ScanMode } from '../../common/enums';
 
 @Processor(QUEUE_REPOSITORY_ANALYSIS, {
   concurrency: Number(process.env.WORKER_CONCURRENCY_REPO_ANALYSIS || 3),
   lockDuration: Number(process.env.QUEUE_JOB_TIMEOUT_MS || 120_000),
+  ...sharedWorkerTuning(),
 })
 export class RepositoryAnalysisProcessor extends WorkerHost {
   private readonly logger = new Logger(RepositoryAnalysisProcessor.name);

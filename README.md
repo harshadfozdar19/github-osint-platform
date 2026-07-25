@@ -181,6 +181,17 @@ POST /api/v1/scans/manual
 
 `maxRepos` is clamped server-side to the admin-configured ceiling (`SCAN_MAX_REPOS`) — a workspace can ask for fewer, never more. Every scan is started deliberately, on demand — there is no automatic background schedule.
 
+### Worker tuning (env)
+
+All 5 queues run as always-on workers, so their idle-maintenance chatter (stalled-job scans, empty-queue re-polling) is constant background Redis traffic independent of whether any scan is running — the dominant source of command volume on a metered/free Redis plan (e.g. Upstash's free tier). Two env vars widen BullMQ's defaults (30s / 5s) since this app's traffic doesn't need that granularity:
+
+```env
+QUEUE_STALLED_INTERVAL_MS=120000   # how often each worker scans for stalled (crashed) jobs
+QUEUE_DRAIN_DELAY_MS=15000         # fallback re-poll wait when a queue is empty
+```
+
+Neither setting delays a healthy scan: `drainDelay` is only a fallback — BullMQ wakes a waiting worker immediately via a Redis notification the instant a job is enqueued. `stalledInterval` only affects how fast a genuinely crashed worker's job is noticed and retried.
+
 Scan statuses: `queued`, `running`, `completed`, `partially_completed`, `failed`, `cancelled`.
 
 Also available: `POST /scans/:id/cancel`, `POST /scans/:id/retry` (retry uses `failed_only` mode).

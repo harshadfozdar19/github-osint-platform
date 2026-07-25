@@ -47,6 +47,22 @@ export function defaultJobOptions(priority = 5) {
   };
 }
 
+/**
+ * Background BullMQ maintenance (stalled-job scans, idle re-polling) runs on
+ * every worker continuously, independent of whether any job is queued. With
+ * 5 always-on workers this idle chatter is the dominant source of Redis
+ * command volume on a low-traffic deployment (Upstash free tier bills per
+ * command). BullMQ's defaults (30s stalled check, 5s idle re-poll) are tuned
+ * for high-throughput queues; widen them here since recovering a genuinely
+ * crashed job a minute or two later is a non-issue for this app's traffic.
+ */
+export function sharedWorkerTuning() {
+  return {
+    stalledInterval: Number(process.env.QUEUE_STALLED_INTERVAL_MS || 120_000),
+    drainDelay: Number(process.env.QUEUE_DRAIN_DELAY_MS || 15_000),
+  };
+}
+
 /** True when this process invocation is the last configured attempt. */
 export function isFinalAttempt(job: {
   attemptsMade: number;

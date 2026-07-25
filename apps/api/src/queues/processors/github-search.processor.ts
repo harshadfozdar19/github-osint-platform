@@ -18,13 +18,19 @@ import {
   MonitoredBrandDocument,
 } from '../../brands/schemas/monitored-brand.schema';
 import { ScanJob, ScanJobDocument } from '../../scans/schemas/scan-job.schema';
-import { safeJobError, isFinalAttempt, withJobTimeout } from '../queue.utils';
+import {
+  safeJobError,
+  isFinalAttempt,
+  withJobTimeout,
+  sharedWorkerTuning,
+} from '../queue.utils';
 import { delayJobForGitHubQuota } from '../github-job.utils';
 import { ScanCheckpointStage, ScanMode } from '../../common/enums';
 
 @Processor(QUEUE_GITHUB_SEARCH, {
   concurrency: Number(process.env.WORKER_CONCURRENCY_GITHUB_SEARCH || 2),
   lockDuration: Number(process.env.QUEUE_JOB_TIMEOUT_MS || 120_000),
+  ...sharedWorkerTuning(),
 })
 export class GitHubSearchProcessor extends WorkerHost {
   private readonly logger = new Logger(GitHubSearchProcessor.name);

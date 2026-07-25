@@ -26,13 +26,14 @@ import {
 } from '../../keywords/schemas/keyword.schema';
 import { ScanJob, ScanJobDocument } from '../../scans/schemas/scan-job.schema';
 import { SearchQuerySpec } from '../../scans/discovery/query-families';
-import { safeJobError, withJobTimeout } from '../queue.utils';
+import { safeJobError, withJobTimeout, sharedWorkerTuning } from '../queue.utils';
 import { delayJobForGitHubQuota } from '../github-job.utils';
 import { ScanCheckpointStage, ScanMode } from '../../common/enums';
 
 @Processor(QUEUE_SCAN_ORCHESTRATOR, {
   concurrency: Number(process.env.WORKER_CONCURRENCY_ORCHESTRATOR || 2),
   lockDuration: Number(process.env.QUEUE_JOB_TIMEOUT_MS || 120_000),
+  ...sharedWorkerTuning(),
 })
 export class ScanOrchestratorProcessor extends WorkerHost {
   private readonly logger = new Logger(ScanOrchestratorProcessor.name);

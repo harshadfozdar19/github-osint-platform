@@ -12,11 +12,17 @@ import { ScanPipelineService } from '../../scans/scan-pipeline.service';
 import { DiscoveryExpansionService } from '../../scans/discovery-expansion.service';
 import { RepoAnalysisContext } from '../../detection/rules/rule.types';
 import { Severity } from '../../common/enums';
-import { safeJobError, isFinalAttempt, withJobTimeout } from '../queue.utils';
+import {
+  safeJobError,
+  isFinalAttempt,
+  withJobTimeout,
+  sharedWorkerTuning,
+} from '../queue.utils';
 
 @Processor(QUEUE_DETECTION_PROCESSING, {
   concurrency: Number(process.env.WORKER_CONCURRENCY_DETECTION || 3),
   lockDuration: Number(process.env.QUEUE_JOB_TIMEOUT_MS || 120_000),
+  ...sharedWorkerTuning(),
 })
 export class DetectionProcessingProcessor extends WorkerHost {
   private readonly logger = new Logger(DetectionProcessingProcessor.name);

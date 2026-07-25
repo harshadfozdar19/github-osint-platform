@@ -10,11 +10,12 @@ import {
   Finding,
   FindingDocument,
 } from '../../findings/schemas/finding.schema';
-import { safeJobError } from '../queue.utils';
+import { safeJobError, sharedWorkerTuning } from '../queue.utils';
 
 @Processor(QUEUE_ALERT_DISPATCH, {
   concurrency: Number(process.env.WORKER_CONCURRENCY_ALERT || 5),
   lockDuration: Number(process.env.QUEUE_JOB_TIMEOUT_MS || 60_000),
+  ...sharedWorkerTuning(),
 })
 export class AlertDispatchProcessor extends WorkerHost {
   private readonly logger = new Logger(AlertDispatchProcessor.name);

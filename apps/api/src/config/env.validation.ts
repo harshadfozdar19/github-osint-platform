@@ -161,6 +161,14 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  QUEUE_STALLED_INTERVAL_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  QUEUE_DRAIN_DELAY_MS?: string;
+
+  @IsOptional()
+  @IsString()
   SCAN_PROGRESS_THROTTLE_MS?: string;
 
   @IsOptional()
