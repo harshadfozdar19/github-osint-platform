@@ -183,14 +183,14 @@ POST /api/v1/scans/manual
 
 ### Worker tuning (env)
 
-All 5 queues run as always-on workers, so their idle-maintenance chatter (stalled-job scans, empty-queue re-polling) is constant background Redis traffic independent of whether any scan is running — the dominant source of command volume on a metered/free Redis plan (e.g. Upstash's free tier). Two env vars widen BullMQ's defaults (30s / 5s) since this app's traffic doesn't need that granularity:
+All 5 queues run as always-on workers, so their idle-maintenance chatter (stalled-job scans, empty-queue re-polling) is constant background Redis traffic independent of whether any scan is running — the dominant source of command volume on a metered/free Redis plan (e.g. Upstash's free tier). At BullMQ's defaults (30s stalled check, 5s idle re-poll) this alone costs roughly **3 million commands/month** from an app doing nothing, several times over a typical free-tier cap. Two env vars widen both:
 
 ```env
-QUEUE_STALLED_INTERVAL_MS=120000   # how often each worker scans for stalled (crashed) jobs
-QUEUE_DRAIN_DELAY_MS=15000         # fallback re-poll wait when a queue is empty
+QUEUE_STALLED_INTERVAL_MS=300000   # how often each worker scans for stalled (crashed) jobs
+QUEUE_DRAIN_DELAY_MS=120000        # how long a worker blocks before re-polling an empty queue
 ```
 
-Neither setting delays a healthy scan: `drainDelay` is only a fallback — BullMQ wakes a waiting worker immediately via a Redis notification the instant a job is enqueued. `stalledInterval` only affects how fast a genuinely crashed worker's job is noticed and retried.
+Neither setting delays a healthy scan: a worker's blocking wait unblocks the instant a job is actually pushed to it, regardless of how long its timeout is set to — `drainDelay` only governs how often it reissues that wait while the queue stays genuinely empty. `stalledInterval` only affects how fast a genuinely crashed worker's job is noticed and retried, which this app's traffic doesn't need to be fast. At these values idle chatter drops to roughly 150K commands/month.
 
 Scan statuses: `queued`, `running`, `completed`, `partially_completed`, `failed`, `cancelled`.
 

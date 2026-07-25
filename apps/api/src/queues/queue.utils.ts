@@ -52,9 +52,12 @@ export function defaultJobOptions(priority = 5) {
  * every worker continuously, independent of whether any job is queued. With
  * 5 always-on workers this idle chatter is the dominant source of Redis
  * command volume on a low-traffic deployment (Upstash free tier bills per
- * command). BullMQ's defaults (30s stalled check, 5s idle re-poll) are tuned
- * for high-throughput queues; widen them here since recovering a genuinely
- * crashed job a minute or two later is a non-issue for this app's traffic.
+ * command) — at BullMQ's defaults (30s stalled check, 5s idle re-poll) it
+ * alone adds up to ~3M commands/month, several times the free-tier cap,
+ * from an idle app doing nothing. Neither setting delays real job pickup:
+ * a push unblocks the worker's wait immediately regardless of the timeout
+ * value, so there's no responsiveness cost to widening these — only a
+ * (harmless, at this app's traffic) delay in noticing a crashed job.
  */
 export function sharedWorkerTuning() {
   // stalledInterval is genuinely milliseconds, but BullMQ's `drainDelay` is
@@ -62,9 +65,9 @@ export function sharedWorkerTuning() {
   // the queue is empty") — the env var stays in ms for consistency with
   // every other QUEUE_*_MS setting, and gets converted here.
   return {
-    stalledInterval: Number(process.env.QUEUE_STALLED_INTERVAL_MS || 120_000),
+    stalledInterval: Number(process.env.QUEUE_STALLED_INTERVAL_MS || 300_000),
     drainDelay: Math.round(
-      Number(process.env.QUEUE_DRAIN_DELAY_MS || 15_000) / 1000,
+      Number(process.env.QUEUE_DRAIN_DELAY_MS || 120_000) / 1000,
     ),
   };
 }
