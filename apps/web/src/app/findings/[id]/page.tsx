@@ -235,6 +235,7 @@ export default function FindingDetailPage() {
                       <thead className="bg-[var(--bg)] text-left text-[var(--muted)]">
                         <tr>
                           <th className="px-4 py-2.5 font-medium">Category</th>
+                          <th className="px-4 py-2.5 font-medium">Rule</th>
                           <th className="px-4 py-2.5 font-medium">File</th>
                           <th className="px-4 py-2.5 font-medium">Line</th>
                           <th className="px-4 py-2.5 font-medium">Severity</th>
@@ -245,6 +246,7 @@ export default function FindingDetailPage() {
                         {(finding.detections || []).map((d) => (
                           <tr key={`row-${d._id || d.ruleId}`} className="border-t border-[var(--border)]">
                             <td className="px-4 py-2.5">{d.category.replace(/_/g, ' ')}</td>
+                            <td className="px-4 py-2.5">{d.ruleName}</td>
                             <td className="px-4 py-2.5 font-[family-name:var(--font-mono)]">
                               {d.file ? (
                                 repo?.url ? (
