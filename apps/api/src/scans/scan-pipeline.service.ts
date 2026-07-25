@@ -8,6 +8,7 @@ import { DetectionEngine } from '../detection/detection.engine';
 import { RiskScoringService } from '../detection/risk-scoring.service';
 import { RepoAnalysisContext } from '../detection/rules/rule.types';
 import { jaroWinkler } from '../common/utils/string-similarity';
+import { CloneScanService } from './clone-scan.service';
 import { GitHubService } from '../github/github.service';
 import {
   Repository,
@@ -24,10 +25,10 @@ import {
   SearchQuerySpec,
 } from './discovery/query-families';
 
-const TEXT_FILE_RE =
+export const TEXT_FILE_RE =
   /(^|\/)(dockerfile|docker-compose.*|package.*|requirements\.txt|pom\.xml|build\.gradle|gradle\.properties|.*\.env.*|.*\.pem$|.*\.key$|.*\.jks$)|(\.(env|md|txt|json|yml|yaml|js|ts|jsx|tsx|py|sh|html|htm|xml|ini|cfg|conf|properties|toml|gradle|properties|key|pem|jks))$/i;
 
-function pathPriority(path: string): number {
+export function pathPriority(path: string): number {
   const p = path.toLowerCase();
   const filename = p.split('/').pop() || '';
   if (filename === '.env' || filename.startsWith('.env.')) return 100;
@@ -87,6 +88,7 @@ export class ScanPipelineService {
     private readonly detectionEngine: DetectionEngine,
     private readonly riskScoring: RiskScoringService,
     private readonly config: ConfigService,
+    private readonly cloneScan: CloneScanService,
   ) {}
 
   buildSearchQueries(
@@ -153,6 +155,38 @@ export class ScanPipelineService {
           this.config.get('MAX_FILES_PER_REPO') ||
           12,
       );
+
+    // Try a shallow git clone + local scan first when eligible - no GitHub
+    // REST calls at all for content, so full-repo coverage instead of a
+    // bounded priority-file list. Opt-in and fails closed: any problem here
+    // (git missing, clone timeout, repo too large) just falls through to the
+    // existing REST-based fetch below.
+    if (await this.cloneScan.shouldAttempt(item.size)) {
+      const cloned = await this.cloneScan.cloneAndScan(owner, name);
+      if (cloned) {
+        return {
+          repositoryDbId: '',
+          ctx: {
+            fullName: item.full_name,
+            owner: item.owner.login,
+            name: item.name,
+            description: item.description || '',
+            topics: item.topics || [],
+            language: item.language || '',
+            stars: item.stargazers_count,
+            forks: item.forks_count,
+            isFork: item.fork,
+            githubCreatedAt: new Date(item.created_at),
+            githubPushedAt: new Date(item.pushed_at),
+            filePaths: cloned.filePaths,
+            readmeText: cloned.readmeText,
+            smallFileTexts: cloned.smallFileTexts,
+            matchedBrandName: matchedBrand?.name,
+            matchedBrandAliases: matchedBrand?.aliases,
+          },
+        };
+      }
+    }
 
     try {
       if (options.commitSha) {

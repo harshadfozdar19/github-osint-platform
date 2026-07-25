@@ -26,6 +26,8 @@ export interface GitHubRepoSearchItem {
   owner: { login: string };
   name: string;
   default_branch?: string;
+  /** KB, as reported by GitHub. Used to decide whether a full clone is safe to attempt. */
+  size?: number;
 }
 
 export interface GitHubSearchResponse {

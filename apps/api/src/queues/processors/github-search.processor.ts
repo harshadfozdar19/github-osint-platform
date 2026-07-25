@@ -151,6 +151,7 @@ export class GitHubSearchProcessor extends WorkerHost {
                 owner: { login: item.owner.login },
                 name: item.name,
                 default_branch: item.default_branch,
+                size: item.size,
               },
               matchedBrand: matched
                 ? {

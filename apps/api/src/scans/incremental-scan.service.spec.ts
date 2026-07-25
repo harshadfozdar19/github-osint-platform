@@ -371,6 +371,7 @@ describe('Finding lifecycle + duplicate prevention', () => {
       new DetectionEngine(),
       new RiskScoringService(),
       { get: () => undefined } as never,
+      { shouldAttempt: () => Promise.resolve(false) } as never,
     );
     return { pipeline, findingModel, detectionModel };
   }
@@ -465,6 +466,7 @@ describe('Finding lifecycle + duplicate prevention', () => {
       new DetectionEngine(),
       new RiskScoringService(),
       { get: () => undefined } as never,
+      { shouldAttempt: () => Promise.resolve(false) } as never,
     );
     await pipeline.upsertRepository(
       new Types.ObjectId().toHexString(),

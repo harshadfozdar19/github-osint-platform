@@ -92,6 +92,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       engine,
       scoring,
       { get: () => undefined } as never,
+      { shouldAttempt: () => Promise.resolve(false) } as never,
     );
 
     const result = await pipeline.runDetectionAndPersist({
@@ -168,6 +169,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       engine,
       scoring,
       { get: () => undefined } as never,
+      { shouldAttempt: () => Promise.resolve(false) } as never,
     );
 
     const result = await pipeline.runDetectionAndPersist({

@@ -59,6 +59,22 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsBooleanString()
+  ENABLE_CLONE_SCAN?: string;
+
+  @IsOptional()
+  @IsString()
+  CLONE_SCAN_MAX_REPO_SIZE_KB?: string;
+
+  @IsOptional()
+  @IsString()
+  CLONE_SCAN_TIMEOUT_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  CLONE_SCAN_MAX_FILES?: string;
+
+  @IsOptional()
+  @IsBooleanString()
   AUTO_PROMOTE_KEYWORDS?: string;
 
   @IsOptional()

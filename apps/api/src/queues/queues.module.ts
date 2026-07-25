@@ -12,6 +12,7 @@ import {
 } from './queue.constants';
 import { ScanQueueService } from './scan-queue.service';
 import { ScanPipelineService } from '../scans/scan-pipeline.service';
+import { CloneScanService } from '../scans/clone-scan.service';
 import { ScanStateService } from '../scans/scan-state.service';
 import { ScanJob, ScanJobSchema } from '../scans/schemas/scan-job.schema';
 import {
@@ -82,6 +83,7 @@ const sharedImports = [
 const sharedProviders = [
   ScanQueueService,
   ScanPipelineService,
+  CloneScanService,
   ScanStateService,
   ScanProgressService,
   IncrementalScanService,

@@ -64,6 +64,7 @@ export interface RepositoryAnalysisJobData {
     owner: { login: string };
     name: string;
     default_branch?: string;
+    size?: number;
   };
   matchedBrand?: {
     id: string;
