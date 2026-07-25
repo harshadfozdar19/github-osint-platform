@@ -26,6 +26,8 @@ This platform is that alarm bell. You tell it which companies/brands to watch an
 
 ## Architecture
 
+### Simplified overview
+
 ```mermaid
 flowchart LR
   Browser[Next.js Dashboard] -->|JWT REST| API[NestJS API]
@@ -37,6 +39,44 @@ flowchart LR
   Worker --> Detect[Rule Detection Engine]
   Detect --> Risk[Risk Scorer 0-100]
   Risk --> Alerts[In-app Alerts]
+```
+
+### Actual architecture
+
+The diagram above collapses a few things for a quick read. This is what's really deployed: five
+independent BullMQ workers (not one generic "Scan Workers" box), the API and workers running as
+one Render service rather than two separate ones, the specific managed providers in use, and the
+live-progress loop that streams a running scan's status back to the browser over SSE.
+
+```mermaid
+flowchart TB
+  UI["Next.js Dashboard<br/>(Vercel)"]
+
+  subgraph BACKEND["NestJS API — one Render service"]
+    direction TB
+    API["HTTP API<br/>auth · brands · keywords · scans · findings"]
+    subgraph WORKERS["Background workers (BullMQ)"]
+      direction LR
+      W1["Scan<br/>Orchestrator"] --> W2["GitHub<br/>Search"] --> W3["Repository<br/>Analysis"] --> W4["Detection<br/>Processing"] --> W5["Alert<br/>Dispatch"]
+    end
+  end
+
+  MONGO[("MongoDB Atlas<br/>users · workspaces · findings · scans")]
+  REDIS[("Upstash Redis<br/>job queue · rate-limit state · live progress")]
+  GH["GitHub REST API<br/>public repos, read-only"]
+
+  UI -- "HTTPS + JWT" --> API
+  API -- "read / write" --> MONGO
+  API -- "enqueue scan" --> REDIS
+  REDIS -- "deliver jobs" --> W1
+  W2 -- "search repos" --> GH
+  W3 -- "fetch content" --> GH
+  W3 -- "pace calls, avoid bans" --> REDIS
+  W4 -- "save findings" --> MONGO
+  W5 -- "save alerts" --> MONGO
+  W1 -. "live progress" .-> REDIS
+  REDIS -. "pub/sub" .-> API
+  API -. "Server-Sent Events" .-> UI
 ```
 
 | Layer | Stack |
