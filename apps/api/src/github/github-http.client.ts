@@ -151,6 +151,41 @@ export class GitHubHttpClient {
   }
 
   /**
+   * Calling GitHub's own /rate_limit endpoint doesn't count against the
+   * quota it reports, and its response body carries every resource's
+   * breakdown (core, search, ...) in one shot - unlike a normal request,
+   * whose headers only ever reflect the one resource that request hit. Used
+   * right after a workspace sets its own token so the quota panel has real
+   * data immediately instead of waiting for the first live scan, and so an
+   * invalid token surfaces as an error right away instead of silently
+   * failing later mid-scan.
+   */
+  async refreshRateLimitSnapshot(ctx: GitHubRequestContext): Promise<void> {
+    const resolved = await this.resolveToken(ctx);
+    if (!resolved) return;
+    const res = await this.request<{
+      resources: Record<
+        string,
+        { limit: number; remaining: number; reset: number; used: number }
+      >;
+    }>('GET', '/rate_limit', { ctx, resourceHint: 'core' });
+
+    const now = Date.now();
+    for (const resource of ['core', 'search'] as const) {
+      const r = res.data.resources?.[resource];
+      if (!r) continue;
+      await this.store.saveSnapshot(resolved.scope, {
+        resource,
+        limit: r.limit,
+        remaining: r.remaining,
+        used: r.used,
+        resetAt: r.reset * 1000,
+        updatedAt: now,
+      });
+    }
+  }
+
+  /**
    * Sole GitHub HTTP entrypoint. Handles budgets, pause, retries, ETags, timeouts.
    */
   async request<T>(

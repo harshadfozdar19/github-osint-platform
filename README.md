@@ -281,6 +281,7 @@ Any workspace can set its own GitHub personal access token from the Settings pag
 - Tokens are encrypted at rest with **AES-256-GCM** before being written to the database — the raw token is never stored in plaintext.
 - The encryption key (`TOKEN_ENCRYPTION_KEY`) lives only in server environment variables, never in the database itself — so even someone with direct, full read access to the database cannot decrypt a stored token without also having the server's environment secret.
 - The API only ever returns a masked status (`configured: true/false`, last 4 characters) — the full token is never sent back to the browser after it's set, not even to the person who set it.
+- Setting a token immediately verifies it against GitHub's `/rate_limit` endpoint (which doesn't cost any quota to call) and populates that workspace's quota snapshot right away — so the dashboard's quota panel has real data before the first scan runs, and a bad token is rejected on the spot instead of failing silently mid-scan later. If GitHub rejects it outright, the token is not saved.
 
 ## Multi-tenancy
 

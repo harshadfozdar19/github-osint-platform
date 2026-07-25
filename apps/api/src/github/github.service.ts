@@ -70,6 +70,16 @@ export class GitHubService {
     return this.http.isConfigured();
   }
 
+  /**
+   * Verifies a token actually works and immediately populates its quota
+   * snapshot, instead of leaving the dashboard's quota panel blank until
+   * the first real scan happens to make a GitHub call. Throws (AUTH code)
+   * if GitHub rejects the token.
+   */
+  refreshRateLimitStatus(workspaceId: string): Promise<void> {
+    return this.http.refreshRateLimitSnapshot({ workspaceId });
+  }
+
   /** True if this workspace can make GitHub calls: its own token, or the shared one. */
   isConfiguredForWorkspace(workspaceId?: string): Promise<boolean> {
     return this.http.isConfiguredForWorkspace(workspaceId);

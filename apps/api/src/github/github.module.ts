@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { GitHubService } from './github.service';
 import { GitHubHttpClient } from './github-http.client';
@@ -7,7 +7,7 @@ import { GitHubController } from './github.controller';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 
 @Module({
-  imports: [ConfigModule, WorkspacesModule],
+  imports: [ConfigModule, forwardRef(() => WorkspacesModule)],
   providers: [GitHubRateLimitStore, GitHubHttpClient, GitHubService],
   controllers: [GitHubController],
   exports: [GitHubService, GitHubHttpClient, GitHubRateLimitStore],

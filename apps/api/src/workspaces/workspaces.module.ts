@@ -10,6 +10,7 @@ import { WorkspacesController } from './workspaces.controller';
 import { UsersModule } from '../users/users.module';
 import { BrandsModule } from '../brands/brands.module';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { GitHubModule } from '../github/github.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
     ]),
     UsersModule,
     forwardRef(() => BrandsModule),
+    forwardRef(() => GitHubModule),
   ],
   providers: [WorkspacesService, TenantGuard],
   controllers: [WorkspacesController],
