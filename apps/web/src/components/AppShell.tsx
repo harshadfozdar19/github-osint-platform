@@ -82,7 +82,7 @@ export function AppShell({
           className="mt-10 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--bg-elevated)]"
           onClick={() => {
             setToken(null);
-            router.push('/login');
+            router.push('/');
           }}
         >
           <LogOut className="h-4 w-4" aria-hidden />
