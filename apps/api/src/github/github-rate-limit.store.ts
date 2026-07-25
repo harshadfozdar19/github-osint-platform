@@ -337,9 +337,10 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
     return count;
   }
 
-  async incrMetric(field: string, by = 1): Promise<void> {
+  incrMetric(field: string, by = 1): Promise<void> {
     this.pendingMetrics.set(field, (this.pendingMetrics.get(field) || 0) + by);
     this.ensureMetricsFlushTimer();
+    return Promise.resolve();
   }
 
   private async flushMetrics(): Promise<void> {

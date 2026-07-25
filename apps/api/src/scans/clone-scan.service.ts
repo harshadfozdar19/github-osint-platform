@@ -58,8 +58,8 @@ export class CloneScanService {
     // plan's command budget. Fails closed either way, so an explicit
     // `false` (or a missing git binary at runtime) just falls back to the
     // existing REST-based fetch with no behavior change.
-    const raw = this.config.get('ENABLE_CLONE_SCAN');
-    return raw === undefined || String(raw).toLowerCase() !== 'false';
+    const raw = this.config.get<string>('ENABLE_CLONE_SCAN');
+    return raw === undefined || raw.toLowerCase() !== 'false';
   }
 
   async shouldAttempt(sizeKb: number | undefined): Promise<boolean> {

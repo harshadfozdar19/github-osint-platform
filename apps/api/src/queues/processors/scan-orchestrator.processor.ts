@@ -26,7 +26,11 @@ import {
 } from '../../keywords/schemas/keyword.schema';
 import { ScanJob, ScanJobDocument } from '../../scans/schemas/scan-job.schema';
 import { SearchQuerySpec } from '../../scans/discovery/query-families';
-import { safeJobError, withJobTimeout, sharedWorkerTuning } from '../queue.utils';
+import {
+  safeJobError,
+  withJobTimeout,
+  sharedWorkerTuning,
+} from '../queue.utils';
 import { delayJobForGitHubQuota } from '../github-job.utils';
 import { ScanCheckpointStage, ScanMode } from '../../common/enums';
 
