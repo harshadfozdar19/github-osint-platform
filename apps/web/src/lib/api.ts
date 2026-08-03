@@ -269,6 +269,8 @@ export interface ScanJob {
   progressMessage?: string;
   progressSeq?: number;
   maxRepos?: number;
+  createdFrom?: string;
+  createdTo?: string;
 }
 
 export interface GithubTokenStatus {
@@ -299,6 +301,8 @@ export interface Keyword {
 export interface GitHubSearchResult {
   total_count: number;
   incomplete_results: boolean;
+  /** Repos hidden because this workspace has already seen them (unless includeSeen was set). */
+  hiddenSeenCount?: number;
   items: Array<{
     id: number;
     full_name?: string;

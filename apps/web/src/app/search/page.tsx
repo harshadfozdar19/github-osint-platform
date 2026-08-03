@@ -9,6 +9,9 @@ import { api, GitHubSearchResult, Keyword } from '@/lib/api';
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [type, setType] = useState<'repositories' | 'code'>('repositories');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
+  const [includeSeen, setIncludeSeen] = useState(false);
   const [page, setPage] = useState(1);
   const [jumpPage, setJumpPage] = useState('1');
   const [results, setResults] = useState<GitHubSearchResult | null>(null);
@@ -51,6 +54,9 @@ export default function SearchPage() {
         page: String(nextPage),
         type,
       });
+      if (type === 'repositories' && createdFrom) params.set('createdFrom', createdFrom);
+      if (type === 'repositories' && createdTo) params.set('createdTo', createdTo);
+      if (includeSeen) params.set('includeSeen', 'true');
       const res = await api<GitHubSearchResult>(`/scans/search?${params}`);
       setResults(res);
       setPage(nextPage);
@@ -96,6 +102,36 @@ export default function SearchPage() {
               <option value="repositories">Repositories</option>
               <option value="code">Code</option>
             </select>
+          </label>
+          {type === 'repositories' ? (
+            <>
+              <label className="text-sm">
+                <span className="mb-1 block text-[var(--muted)]">Created from</span>
+                <input
+                  type="date"
+                  value={createdFrom}
+                  onChange={(e) => setCreatedFrom(e.target.value)}
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-[var(--muted)]">Created to</span>
+                <input
+                  type="date"
+                  value={createdTo}
+                  onChange={(e) => setCreatedTo(e.target.value)}
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                />
+              </label>
+            </>
+          ) : null}
+          <label className="flex items-center gap-2 text-sm pb-2">
+            <input
+              type="checkbox"
+              checked={includeSeen}
+              onChange={(e) => setIncludeSeen(e.target.checked)}
+            />
+            Include already-reviewed repos
           </label>
           <button
             type="submit"
@@ -158,7 +194,14 @@ export default function SearchPage() {
         {loading ? <LoadingBlock label="Querying GitHub…" /> : null}
 
         {!loading && results && results.items.length === 0 ? (
-          <EmptyState title="No results" body="Try a different query or search type." />
+          <EmptyState
+            title="No results"
+            body={
+              results.hiddenSeenCount
+                ? `${results.hiddenSeenCount} repo${results.hiddenSeenCount === 1 ? '' : 's'} matched but ${results.hiddenSeenCount === 1 ? 'was' : 'were'} already reviewed. Check "Include already-reviewed repos" to see them again.`
+                : 'Try a different query or search type.'
+            }
+          />
         ) : null}
 
         {!loading && results && results.items.length > 0 ? (
@@ -166,6 +209,9 @@ export default function SearchPage() {
             <p className="mb-4 text-sm text-[var(--muted)]">
               {results.total_count.toLocaleString()} results
               {results.incomplete_results ? ' (incomplete)' : ''} · page {page}
+              {results.hiddenSeenCount ? (
+                <span> · {results.hiddenSeenCount} already-reviewed repo{results.hiddenSeenCount === 1 ? '' : 's'} hidden</span>
+              ) : null}
             </p>
             <ul className="space-y-3">
               {results.items.map((item) => {

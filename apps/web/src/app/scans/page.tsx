@@ -24,6 +24,8 @@ export default function ScansPage() {
   const [customQuery, setCustomQuery] = useState('');
   const [searchKind, setSearchKind] = useState<'repositories' | 'code'>('repositories');
   const [maxRepos, setMaxRepos] = useState('');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
 
   async function load() {
     setLoading(true);
@@ -58,6 +60,7 @@ export default function ScansPage() {
     setError('');
     try {
       const parsedMaxRepos = Number(maxRepos);
+      const dateFilterApplies = !(scope === 'query' && searchKind === 'code');
       const job = await api<ScanJob>('/scans/manual', {
         method: 'POST',
         body: JSON.stringify({
@@ -67,6 +70,12 @@ export default function ScansPage() {
           ...(scope === 'query' ? { customQuery: customQuery.trim(), searchKind } : {}),
           ...(mode !== 'failed_only' && maxRepos.trim() && Number.isFinite(parsedMaxRepos)
             ? { maxRepos: parsedMaxRepos }
+            : {}),
+          ...(mode !== 'failed_only' && dateFilterApplies && createdFrom
+            ? { createdFrom }
+            : {}),
+          ...(mode !== 'failed_only' && dateFilterApplies && createdTo
+            ? { createdTo }
             : {}),
         }),
       });
@@ -175,6 +184,28 @@ export default function ScansPage() {
               />
             </label>
           ) : null}
+          {mode !== 'failed_only' && !(scope === 'query' && searchKind === 'code') ? (
+            <>
+              <label className="text-sm">
+                <span className="mb-1 block text-[var(--muted)]">Created from</span>
+                <input
+                  type="date"
+                  value={createdFrom}
+                  onChange={(e) => setCreatedFrom(e.target.value)}
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-[var(--muted)]">Created to</span>
+                <input
+                  type="date"
+                  value={createdTo}
+                  onChange={(e) => setCreatedTo(e.target.value)}
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+                />
+              </label>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={startManual}
@@ -188,7 +219,8 @@ export default function ScansPage() {
             workers complete scans without live GitHub calls. Scope narrows discovery to one brand
             or a raw GitHub search query — findings still go through the full detection pipeline.
             Max repos requests fewer (or more, up to the admin ceiling) than the default; leave
-            blank to use the default.
+            blank to use the default. Created from/to only consider repos created in that window
+            (repository search only — not available with a custom code-search query).
           </p>
         </div>
         {message ? <p className="mb-4 text-sm text-[var(--accent)]">{message}</p> : null}
