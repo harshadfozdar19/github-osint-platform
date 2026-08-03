@@ -35,6 +35,22 @@ export class GitHubHttpClient {
 
   private readonly globalToken?: string;
 
+  /**
+   * GitHub's search API is the actual discovery bottleneck (30 req/min,
+   * far stricter than the 5,000/hr core quota), and results for the exact
+   * same public query rarely change within a few minutes - so an identical
+   * search hit twice in a short window (overlapping keywords across brands,
+   * a resumed scan re-issuing the same page) is answered from memory
+   * instead of spending a real call. Search results are public GitHub data,
+   * so this is shared across every workspace, not scoped to one. A cache
+   * hit skips rate-limit/quota bookkeeping entirely too - zero Redis cost.
+   */
+  private readonly searchResultCache = new Map<
+    string,
+    { value: unknown; expiresAt: number }
+  >();
+  private readonly searchCacheTtlMs: number;
+
   constructor(
     private readonly config: ConfigService,
     private readonly store: GitHubRateLimitStore,
@@ -69,6 +85,9 @@ export class GitHubHttpClient {
     );
     this.maxInlineWaitMs = Number(
       this.config.get('GITHUB_MAX_INLINE_WAIT_MS') || 15_000,
+    );
+    this.searchCacheTtlMs = Number(
+      this.config.get('GITHUB_SEARCH_DEDUP_CACHE_MS') || 180_000,
     );
 
     this.client = axios.create({
@@ -185,6 +204,10 @@ export class GitHubHttpClient {
     }
   }
 
+  private isSearchPath(path: string): boolean {
+    return path.startsWith('/search/');
+  }
+
   /**
    * Sole GitHub HTTP entrypoint. Handles budgets, pause, retries, ETags, timeouts.
    */
@@ -198,6 +221,17 @@ export class GitHubHttpClient {
       resourceHint?: GitHubResource;
     } = {},
   ): Promise<ManagedGitHubResponse<T>> {
+    const cacheable = method === 'GET' && this.isSearchPath(path);
+    const cacheKey = cacheable
+      ? `${path}?${JSON.stringify(options.params || {})}`
+      : undefined;
+    if (cacheKey) {
+      const cached = this.searchResultCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.value as ManagedGitHubResponse<T>;
+      }
+    }
+
     const ctx = options.ctx || {};
     const resolved = await this.resolveToken(ctx);
     if (!resolved) {
@@ -249,7 +283,7 @@ export class GitHubHttpClient {
       if (ctx.workspaceId && usesSharedToken) {
         await this.store.incrementBudget(ctx.workspaceId);
       }
-      return await this.executeWithRetries<T>(
+      const result = await this.executeWithRetries<T>(
         method,
         path,
         resource,
@@ -257,6 +291,13 @@ export class GitHubHttpClient {
         token,
         scope,
       );
+      if (cacheKey) {
+        this.searchResultCache.set(cacheKey, {
+          value: result,
+          expiresAt: Date.now() + this.searchCacheTtlMs,
+        });
+      }
+      return result;
     } finally {
       await this.store.releaseConcurrency(workspaceId);
     }

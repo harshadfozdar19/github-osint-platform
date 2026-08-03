@@ -450,3 +450,122 @@ describe('GitHubHttpClient rate-limit management', () => {
     expect(store.markScanPaused).toHaveBeenCalled();
   });
 });
+
+describe('GitHubHttpClient search result caching', () => {
+  beforeEach(() => {
+    mockRequest.mockReset();
+  });
+
+  it('answers an identical search call from cache without a real request', async () => {
+    const { client, store } = buildClient();
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: { total_count: 1, items: [{ id: 1 }] },
+      headers: headers(),
+    });
+
+    const first = await client.request('GET', '/search/repositories', {
+      params: { q: 'zerodha' },
+      ctx: { workspaceId: 'ws1' },
+      resourceHint: 'search',
+    });
+    const second = await client.request('GET', '/search/repositories', {
+      params: { q: 'zerodha' },
+      ctx: { workspaceId: 'ws2' },
+      resourceHint: 'search',
+    });
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+    // A cache hit skips rate-limit bookkeeping entirely.
+    expect(store.acquireConcurrency).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats different query params as different cache entries', async () => {
+    const { client } = buildClient();
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: { total_count: 0, items: [] },
+      headers: headers(),
+    });
+
+    await client.request('GET', '/search/repositories', {
+      params: { q: 'zerodha' },
+      ctx: { workspaceId: 'ws1' },
+      resourceHint: 'search',
+    });
+    await client.request('GET', '/search/repositories', {
+      params: { q: 'groww' },
+      ctx: { workspaceId: 'ws1' },
+      resourceHint: 'search',
+    });
+
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache non-search paths', async () => {
+    const { client } = buildClient();
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: { ok: true },
+      headers: headers(),
+    });
+
+    await client.request('GET', '/repos/a/b', { ctx: { workspaceId: 'ws1' } });
+    await client.request('GET', '/repos/a/b', { ctx: { workspaceId: 'ws1' } });
+
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('expires the cache entry after the configured TTL', async () => {
+    const config = {
+      get: (key: string) => {
+        const map: Record<string, string> = {
+          GITHUB_TOKEN: 'ghp_testtoken_not_a_real_secret_0001',
+          GITHUB_RETRY_ATTEMPTS: '1',
+          GITHUB_SEARCH_DEDUP_CACHE_MS: '5',
+        };
+        return map[key];
+      },
+    } as unknown as ConfigService;
+    const store = {
+      getPause: jest.fn().mockResolvedValue({
+        paused: false,
+        pausedUntil: null,
+        reason: null,
+        resource: null,
+      }),
+      getSecondaryRetryAfterUntil: jest.fn().mockResolvedValue(null),
+      getSnapshot: jest.fn().mockResolvedValue(null),
+      saveSnapshot: jest.fn().mockResolvedValue(undefined),
+      getBudgetUsed: jest.fn().mockResolvedValue(0),
+      incrementBudget: jest.fn().mockResolvedValue(1),
+      acquireConcurrency: jest.fn().mockResolvedValue(true),
+      releaseConcurrency: jest.fn().mockResolvedValue(undefined),
+      incrMetric: jest.fn().mockResolvedValue(undefined),
+    } as unknown as GitHubRateLimitStore;
+    const workspaces = {
+      resolveGithubToken: jest.fn().mockResolvedValue(undefined),
+    } as unknown as import('../workspaces/workspaces.service').WorkspacesService;
+    const client = new GitHubHttpClient(config, store, workspaces);
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: { total_count: 0, items: [] },
+      headers: headers(),
+    });
+
+    await client.request('GET', '/search/repositories', {
+      params: { q: 'zerodha' },
+      ctx: { workspaceId: 'ws1' },
+      resourceHint: 'search',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    await client.request('GET', '/search/repositories', {
+      params: { q: 'zerodha' },
+      ctx: { workspaceId: 'ws1' },
+      resourceHint: 'search',
+    });
+
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+});

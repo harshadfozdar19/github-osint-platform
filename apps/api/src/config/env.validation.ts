@@ -201,6 +201,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  GITHUB_SEARCH_DEDUP_CACHE_MS?: string;
+
+  @IsOptional()
+  @IsString()
   GITHUB_WORKSPACE_DAILY_BUDGET?: string;
 
   @IsOptional()
