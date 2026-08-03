@@ -11,6 +11,7 @@ import { ScanStateService } from '../../scans/scan-state.service';
 import { ScanPipelineService } from '../../scans/scan-pipeline.service';
 import { IncrementalScanService } from '../../scans/incremental-scan.service';
 import { GitHubService } from '../../github/github.service';
+import { CloneScanService } from '../../scans/clone-scan.service';
 import {
   safeJobError,
   isFinalAttempt,
@@ -35,6 +36,7 @@ export class RepositoryAnalysisProcessor extends WorkerHost {
     private readonly incremental: IncrementalScanService,
     private readonly github: GitHubService,
     private readonly config: ConfigService,
+    private readonly cloneScan: CloneScanService,
   ) {
     super();
   }
@@ -81,12 +83,27 @@ export class RepositoryAnalysisProcessor extends WorkerHost {
         );
 
         // HEAD SHA check is cheap and required for accurate skip; not content analysis.
+        // For clone-eligible repos, get it over git's own transport instead
+        // of GitHub REST (getRepositoryHead is actually two REST calls) -
+        // zero GitHub quota and zero Redis rate-limit bookkeeping. Falls
+        // back to REST for anything not clone-eligible or if git fails.
         const [owner, name] = repo.full_name.split('/');
-        const head = await this.github.getRepositoryHead(owner, name, {
-          workspaceId,
-          scanJobId,
-          signal: abort.signal,
-        });
+        const remoteHead = (await this.cloneScan.shouldAttempt(repo.size))
+          ? await this.cloneScan.getRemoteHead(owner, name)
+          : null;
+        const head = remoteHead
+          ? {
+              sha: remoteHead.sha,
+              defaultBranch: remoteHead.defaultBranch || repo.default_branch,
+              pushedAt: undefined,
+              updatedAt: undefined,
+              etag: undefined,
+            }
+          : await this.github.getRepositoryHead(owner, name, {
+              workspaceId,
+              scanJobId,
+              signal: abort.signal,
+            });
 
         const decision = this.incremental.decideRescan({
           mode,

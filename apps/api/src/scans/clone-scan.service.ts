@@ -37,6 +37,37 @@ export interface CloneScanResult {
   smallFileTexts: Array<{ path: string; content: string }>;
 }
 
+export interface RemoteHead {
+  sha: string;
+  defaultBranch?: string;
+}
+
+/**
+ * Parses `git ls-remote --symref <url> HEAD` output, e.g.:
+ *   ref: refs/heads/main	HEAD
+ *   3f2504e0...c3a1	HEAD
+ * Exported standalone so parsing logic can be unit tested without spawning
+ * a real git process.
+ */
+export function parseLsRemoteHead(stdout: string): RemoteHead | null {
+  let defaultBranch: string | undefined;
+  let sha: string | undefined;
+  for (const rawLine of stdout.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('ref:')) {
+      const match = /ref:\s+refs\/heads\/(\S+)/.exec(line);
+      if (match) defaultBranch = match[1];
+      continue;
+    }
+    const [maybeSha, ref] = line.split(/\s+/);
+    if (ref === 'HEAD' && /^[0-9a-f]{40}$/i.test(maybeSha)) {
+      sha = maybeSha;
+    }
+  }
+  return sha ? { sha, defaultBranch } : null;
+}
+
 /**
  * Alternative to per-file REST content fetching: shallow-clones a public repo
  * over git's own transport (no GitHub REST rate limit involved at all) and
@@ -137,6 +168,60 @@ export class CloneScanService {
         await rm(dir, { recursive: true, force: true }).catch(() => undefined);
       }
     }
+  }
+
+  /**
+   * Current HEAD commit SHA + default branch over git's own transport - no
+   * GitHub REST call at all (the REST equivalent, getRepositoryHead, is
+   * actually *two* REST calls: repo metadata, then the branch ref). Used to
+   * make the incremental "did this change" decision for clone-eligible
+   * repos without spending any GitHub quota or Redis rate-limit bookkeeping
+   * on it. Fails closed - null on any error, letting the caller fall back
+   * to the REST-based check exactly as before.
+   */
+  async getRemoteHead(owner: string, name: string): Promise<RemoteHead | null> {
+    if (!(await this.checkGitAvailable())) return null;
+    const timeoutMs = Number(
+      this.config.get('CLONE_SCAN_TIMEOUT_MS') || 30_000,
+    );
+    const url = `https://github.com/${owner}/${name}.git`;
+    try {
+      return await this.runGitLsRemote(url, timeoutMs);
+    } catch (error) {
+      this.logger.warn(
+        `git ls-remote failed for ${owner}/${name}: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  private runGitLsRemote(
+    url: string,
+    timeoutMs: number,
+  ): Promise<RemoteHead | null> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn('git', ['ls-remote', '--symref', url, 'HEAD']);
+      let stdout = '';
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      const timer = setTimeout(() => {
+        proc.kill('SIGKILL');
+        reject(new Error(`git ls-remote timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      proc.on('exit', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`git ls-remote exited with code ${code}`));
+          return;
+        }
+        resolve(parseLsRemoteHead(stdout));
+      });
+    });
   }
 
   private async checkGitAvailable(): Promise<boolean> {
