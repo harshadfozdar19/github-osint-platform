@@ -48,6 +48,14 @@ export class ScanJob {
   @Prop()
   maxRepos?: number;
 
+  /** Only consider repos created on/after this date (GitHub `created:` qualifier). */
+  @Prop({ type: Date })
+  createdFrom?: Date;
+
+  /** Only consider repos created on/before this date (GitHub `created:` qualifier). */
+  @Prop({ type: Date })
+  createdTo?: Date;
+
   /** Detection ruleset version pinned for this scan */
   @Prop({ default: '' })
   rulesetVersion!: string;

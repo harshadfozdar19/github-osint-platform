@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -40,6 +41,7 @@ import {
   repoAnalysisJobId,
 } from './queue.constants';
 import { buildScanConfigHash, defaultJobOptions } from './queue.utils';
+import { buildCreatedQualifier } from '../scans/discovery/query-families';
 import { ScanStateService } from '../scans/scan-state.service';
 import { ScanProgressService } from '../scans/progress/scan-progress.service';
 import {
@@ -59,6 +61,10 @@ export interface ManualScanOptions {
   searchKind?: 'repositories' | 'code';
   /** User-requested repo discovery cap; clamped to the admin ceiling. */
   maxRepos?: number;
+  /** Only consider repos created on/after this date (YYYY-MM-DD). */
+  createdFrom?: string;
+  /** Only consider repos created on/before this date (YYYY-MM-DD). */
+  createdTo?: string;
 }
 
 @Injectable()
@@ -114,6 +120,18 @@ export class ScanQueueService {
     // customQuery takes priority over brandId when both are set.
     const customQuery = options.customQuery?.trim() || undefined;
     const searchKind = options.searchKind || 'repositories';
+    if (
+      customQuery &&
+      searchKind === 'code' &&
+      (options.createdFrom || options.createdTo)
+    ) {
+      throw new BadRequestException(
+        'createdFrom/createdTo only apply to repository search, not code search',
+      );
+    }
+    // Validates format/range/bounds up front so a bad date fails the request
+    // immediately instead of surfacing deep inside the orchestrator later.
+    buildCreatedQualifier(options.createdFrom, options.createdTo);
     let scopeBrandId: string | undefined;
     if (!customQuery && options.brandId) {
       if (!Types.ObjectId.isValid(options.brandId)) {
@@ -193,6 +211,10 @@ export class ScanQueueService {
       scopeQuery: customQuery,
       scopeSearchKind: customQuery ? searchKind : undefined,
       maxRepos,
+      createdFrom: options.createdFrom
+        ? new Date(options.createdFrom)
+        : undefined,
+      createdTo: options.createdTo ? new Date(options.createdTo) : undefined,
       checkpoint: {
         stage: ScanCheckpointStage.QUEUED,
         updatedAt: new Date(),

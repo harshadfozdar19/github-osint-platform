@@ -25,7 +25,10 @@ import {
   KeywordDocument,
 } from '../../keywords/schemas/keyword.schema';
 import { ScanJob, ScanJobDocument } from '../../scans/schemas/scan-job.schema';
-import { SearchQuerySpec } from '../../scans/discovery/query-families';
+import {
+  SearchQuerySpec,
+  buildCreatedQualifier,
+} from '../../scans/discovery/query-families';
 import {
   safeJobError,
   withJobTimeout,
@@ -212,20 +215,37 @@ export class ScanOrchestratorProcessor extends WorkerHost {
         })
         .lean()
         .exec();
+      const createdFrom = scan.createdFrom
+        ? new Date(scan.createdFrom).toISOString().slice(0, 10)
+        : undefined;
+      const createdTo = scan.createdTo
+        ? new Date(scan.createdTo).toISOString().slice(0, 10)
+        : undefined;
+
       let querySpecs: SearchQuerySpec[];
       if (scan.scopeQuery) {
+        const scopeKind = scan.scopeSearchKind || 'repositories';
+        const createdQualifier =
+          scopeKind === 'repositories'
+            ? buildCreatedQualifier(createdFrom, createdTo)
+            : undefined;
         querySpecs = [
           {
-            kind: scan.scopeSearchKind || 'repositories',
+            kind: scopeKind,
             family: 'custom',
-            query: scan.scopeQuery,
+            query: createdQualifier
+              ? `${scan.scopeQuery} ${createdQualifier}`
+              : scan.scopeQuery,
           },
         ];
       } else {
         const scopedBrands = scan.scopeBrandId
           ? brands.filter((b) => String(b._id) === String(scan.scopeBrandId))
           : brands;
-        querySpecs = this.pipeline.buildSearchQueries(scopedBrands, keywords);
+        querySpecs = this.pipeline.buildSearchQueries(scopedBrands, keywords, {
+          createdFrom,
+          createdTo,
+        });
       }
       const queries = querySpecs.map(
         (q) => `[${q.kind}/${q.family}] ${q.query}`,

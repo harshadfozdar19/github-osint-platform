@@ -1,4 +1,5 @@
-import { buildQueryFamilies } from './query-families';
+import { BadRequestException } from '@nestjs/common';
+import { buildCreatedQualifier, buildQueryFamilies } from './query-families';
 import { generateTypoVariants } from './typo-squat';
 
 describe('discovery query families', () => {
@@ -88,6 +89,89 @@ describe('discovery query families', () => {
     const phishing = specs.find((s) => s.family === 'phishing');
     expect(phishing?.query).toContain('enabled-kw');
     expect(phishing?.query).not.toContain('disabled-kw');
+  });
+});
+
+describe('buildCreatedQualifier', () => {
+  it('returns undefined when neither bound is given', () => {
+    expect(buildCreatedQualifier()).toBeUndefined();
+  });
+
+  it('builds a range when both bounds are given', () => {
+    expect(buildCreatedQualifier('2026-07-31', '2026-08-02')).toBe(
+      'created:2026-07-31..2026-08-02',
+    );
+  });
+
+  it('builds a one-sided qualifier when only one bound is given', () => {
+    expect(buildCreatedQualifier('2026-07-31', undefined)).toBe(
+      'created:>=2026-07-31',
+    );
+    expect(buildCreatedQualifier(undefined, '2026-08-02')).toBe(
+      'created:<=2026-08-02',
+    );
+  });
+
+  it('rejects createdFrom after createdTo', () => {
+    expect(() => buildCreatedQualifier('2026-08-02', '2026-07-31')).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects dates before GitHub existed', () => {
+    expect(() => buildCreatedQualifier('2000-01-01', undefined)).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects future dates', () => {
+    expect(() => buildCreatedQualifier('2999-01-01', undefined)).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects malformed dates', () => {
+    expect(() => buildCreatedQualifier('not-a-date', undefined)).toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+describe('buildQueryFamilies date range integration', () => {
+  it('appends the created qualifier only to repository-kind queries', () => {
+    const specs = buildQueryFamilies(
+      [{ name: 'Acme', aliases: [], keywords: ['acme'] }],
+      {
+        maxQueries: 40,
+        enableCodeSearch: true,
+        createdFrom: '2026-07-31',
+        createdTo: '2026-08-02',
+      },
+    );
+    const repoSpecs = specs.filter((s) => s.kind === 'repositories');
+    const codeSpecs = specs.filter((s) => s.kind === 'code');
+    expect(repoSpecs.length).toBeGreaterThan(0);
+    expect(
+      repoSpecs.every((s) =>
+        s.query.includes('created:2026-07-31..2026-08-02'),
+      ),
+    ).toBe(true);
+    expect(codeSpecs.every((s) => !s.query.includes('created:'))).toBe(true);
+  });
+
+  it('an explicit date range overrides GITHUB_SEARCH_DATE', () => {
+    process.env.GITHUB_SEARCH_DATE = 'created:2020-01-01..2020-12-31';
+    try {
+      const specs = buildQueryFamilies(
+        [{ name: 'Acme', aliases: [], keywords: ['acme'] }],
+        { maxQueries: 40, createdFrom: '2026-07-31' },
+      );
+      const repoSpec = specs.find((s) => s.kind === 'repositories');
+      expect(repoSpec?.query).toContain('created:>=2026-07-31');
+      expect(repoSpec?.query).not.toContain('2020');
+    } finally {
+      delete process.env.GITHUB_SEARCH_DATE;
+    }
   });
 });
 

@@ -34,6 +34,7 @@ describe('ScansController progress auth / tenancy surface', () => {
       scansService as never,
       progress as never,
       {} as never,
+      {} as never,
     );
     const result = await controller.getProgress(
       { workspaceId, role: 'admin' as never, membershipId: 'm1' },
@@ -53,6 +54,7 @@ describe('ScansController progress auth / tenancy surface', () => {
     const controller = new ScansController(
       {} as never,
       progress as never,
+      {} as never,
       {} as never,
     );
     await expect(
@@ -77,6 +79,7 @@ describe('ScansController progress auth / tenancy surface', () => {
     const controller = new ScansController(
       {} as never,
       progress as never,
+      {} as never,
       {} as never,
     );
     controller.events(

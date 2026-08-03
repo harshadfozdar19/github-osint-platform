@@ -1,6 +1,60 @@
+import { BadRequestException } from '@nestjs/common';
 import { generateTypoVariants } from './typo-squat';
 
 export type SearchKind = 'repositories' | 'code';
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** GitHub's own founding — a floor below which "created:" is never meaningful. */
+const EARLIEST_SANE_DATE = '2008-01-01';
+
+/** Normalizes to GitHub's YYYY-MM-DD qualifier format; throws on anything else. */
+function normalizeDate(input: string, field: string): string {
+  const trimmed = input.trim();
+  if (DATE_RE.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new BadRequestException(`${field} must be a valid date (YYYY-MM-DD)`);
+  }
+  return parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Validates and builds a GitHub `created:` search qualifier from a from/to
+ * range. Only meaningful for repository search — GitHub's code search API
+ * does not support the `created:` qualifier at all, so callers scoping a
+ * raw code-search query must reject a date range before reaching here
+ * rather than silently dropping it.
+ */
+export function buildCreatedQualifier(
+  createdFrom?: string,
+  createdTo?: string,
+): string | undefined {
+  if (!createdFrom && !createdTo) return undefined;
+  const from = createdFrom
+    ? normalizeDate(createdFrom, 'createdFrom')
+    : undefined;
+  const to = createdTo ? normalizeDate(createdTo, 'createdTo') : undefined;
+
+  for (const [label, value] of [
+    ['createdFrom', from],
+    ['createdTo', to],
+  ] as const) {
+    if (value && value < EARLIEST_SANE_DATE) {
+      throw new BadRequestException(`${label} predates GitHub itself`);
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (value && value > today) {
+      throw new BadRequestException(`${label} cannot be in the future`);
+    }
+  }
+  if (from && to && from > to) {
+    throw new BadRequestException('createdFrom must not be after createdTo');
+  }
+
+  if (from && to) return `created:${from}..${to}`;
+  if (from) return `created:>=${from}`;
+  return `created:<=${to}`;
+}
 
 export interface SearchQuerySpec {
   query: string;
@@ -47,6 +101,9 @@ export function buildQueryFamilies(
     enableCodeSearch?: boolean;
     includeSecretFilenames?: boolean;
     keywords?: KeywordQueryInput[];
+    /** Per-scan repo creation date range; takes priority over GITHUB_SEARCH_DATE when set. */
+    createdFrom?: string;
+    createdTo?: string;
   } = {},
 ): SearchQuerySpec[] {
   const maxQueries = options.maxQueries ?? 40;
@@ -73,7 +130,16 @@ export function buildQueryFamilies(
   if (process.env.GITHUB_SEARCH_STARS) {
     filters.push(`stars:${process.env.GITHUB_SEARCH_STARS}`);
   }
-  if (process.env.GITHUB_SEARCH_DATE) {
+  // An explicit per-scan date range always wins over the static env default -
+  // the env var is a global fallback, not meant to override a deliberate,
+  // one-off request for a specific window.
+  const createdQualifier = buildCreatedQualifier(
+    options.createdFrom,
+    options.createdTo,
+  );
+  if (createdQualifier) {
+    filters.push(createdQualifier);
+  } else if (process.env.GITHUB_SEARCH_DATE) {
     filters.push(process.env.GITHUB_SEARCH_DATE);
   }
   const suffixFilters = filters.length > 0 ? ' ' + filters.join(' ') : '';

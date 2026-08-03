@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { ScanJobStatus } from '../common/enums';
 import { ScanQueueService } from './scan-queue.service';
@@ -170,5 +170,40 @@ describe('ScanQueueService', () => {
     expect(scanModel.create).toHaveBeenCalledWith(
       expect.objectContaining({ maxRepos: 500 }),
     );
+  });
+
+  it('persists a created-date range onto the scan job', async () => {
+    const { service, scanModel } = buildService({});
+    await service.enqueueManualScan(workspaceId, userId, {
+      createdFrom: '2026-07-31',
+      createdTo: '2026-08-02',
+    });
+    expect(scanModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        createdFrom: new Date('2026-07-31'),
+        createdTo: new Date('2026-08-02'),
+      }),
+    );
+  });
+
+  it('rejects createdFrom after createdTo', async () => {
+    const { service } = buildService({});
+    await expect(
+      service.enqueueManualScan(workspaceId, userId, {
+        createdFrom: '2026-08-02',
+        createdTo: '2026-07-31',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a date range combined with a code-search custom query', async () => {
+    const { service } = buildService({});
+    await expect(
+      service.enqueueManualScan(workspaceId, userId, {
+        customQuery: 'zerodha filename:.env',
+        searchKind: 'code',
+        createdFrom: '2026-07-31',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

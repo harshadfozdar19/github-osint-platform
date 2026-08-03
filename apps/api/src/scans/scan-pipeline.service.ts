@@ -94,6 +94,7 @@ export class ScanPipelineService {
   buildSearchQueries(
     brands: Array<{ name: string; aliases: string[]; keywords: string[] }>,
     keywords?: Array<{ keyword: string; category: string; priority: number }>,
+    dateRange?: { createdFrom?: string; createdTo?: string },
   ): SearchQuerySpec[] {
     const maxQueries = Number(this.config.get('SCAN_MAX_QUERIES') || 40);
     const enableCodeSearch =
@@ -104,6 +105,8 @@ export class ScanPipelineService {
       enableCodeSearch,
       includeSecretFilenames: true,
       keywords,
+      createdFrom: dateRange?.createdFrom,
+      createdTo: dateRange?.createdTo,
     });
   }
 

@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsIn,
   IsInt,
@@ -76,4 +77,22 @@ export class ManualScanDto {
   @Min(1)
   @Max(10000)
   maxRepos?: number;
+
+  @ApiPropertyOptional({
+    example: '2026-07-31',
+    description:
+      'Only consider repos created on/after this date (YYYY-MM-DD). Repository search only — invalid alongside searchKind=code.',
+  })
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-02',
+    description:
+      'Only consider repos created on/before this date (YYYY-MM-DD). Repository search only — invalid alongside searchKind=code.',
+  })
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
 }

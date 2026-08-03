@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -34,6 +35,8 @@ import { WORKSPACE_HEADER } from '../common/enums';
 import { ScanProgressService } from './progress/scan-progress.service';
 import { ManualScanDto } from './dto/manual-scan.dto';
 import { GitHubService } from '../github/github.service';
+import { buildCreatedQualifier } from './discovery/query-families';
+import { SeenRepositoriesService } from './seen-repositories.service';
 
 @ApiTags('scans')
 @ApiBearerAuth()
@@ -46,6 +49,7 @@ export class ScansController {
     private readonly scansService: ScansService,
     private readonly progressService: ScanProgressService,
     private readonly github: GitHubService,
+    private readonly seenRepos: SeenRepositoriesService,
   ) {}
 
   @Get()
@@ -80,6 +84,8 @@ export class ScansController {
       customQuery: body.customQuery,
       searchKind: body.searchKind,
       maxRepos: body.maxRepos,
+      createdFrom: body.createdFrom,
+      createdTo: body.createdTo,
     });
   }
 
@@ -96,21 +102,58 @@ export class ScansController {
     enum: ['repositories', 'code'],
     description: 'Search type (default: repositories)',
   })
+  @ApiQuery({
+    name: 'createdFrom',
+    required: false,
+    description:
+      'Only repos created on/after this date (YYYY-MM-DD). Repository search only.',
+  })
+  @ApiQuery({
+    name: 'createdTo',
+    required: false,
+    description:
+      'Only repos created on/before this date (YYYY-MM-DD). Repository search only.',
+  })
+  @ApiQuery({
+    name: 'includeSeen',
+    required: false,
+    description:
+      'Include repos this workspace has already seen (default: false, hidden).',
+  })
   async customSearch(
     @CurrentTenant() tenant: TenantContext,
     @Query('q') q: string,
     @Query('page') page = '1',
     @Query('type') type: 'repositories' | 'code' = 'repositories',
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
+    @Query('includeSeen') includeSeen?: string,
   ) {
     const p = Math.max(1, Number(page) || 1);
-    if (type === 'code') {
-      return this.github.searchCode(q, p, 10, {
-        workspaceId: tenant.workspaceId,
-      });
+    if (type === 'code' && (createdFrom || createdTo)) {
+      throw new BadRequestException(
+        'createdFrom/createdTo only apply to repository search, not code search',
+      );
     }
-    return this.github.searchRepositories(q, p, 10, {
-      workspaceId: tenant.workspaceId,
-    });
+    const createdQualifier = buildCreatedQualifier(createdFrom, createdTo);
+    const query = createdQualifier ? `${q} ${createdQualifier}` : q;
+    const want = includeSeen === 'true';
+
+    const result =
+      type === 'code'
+        ? await this.github.searchCode(query, p, 10, {
+            workspaceId: tenant.workspaceId,
+          })
+        : await this.github.searchRepositories(query, p, 10, {
+            workspaceId: tenant.workspaceId,
+          });
+
+    const { items, hiddenSeenCount } = await this.seenRepos.filterUnseen(
+      tenant.workspaceId,
+      result.items,
+      want,
+    );
+    return { ...result, items, hiddenSeenCount };
   }
 
   @Post(':id/cancel')
