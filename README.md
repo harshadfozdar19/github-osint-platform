@@ -15,7 +15,7 @@ This platform is that alarm bell. You tell it which companies/brands to watch an
 - **Watch your companies/brands** — add, edit, enable/disable them from the dashboard. No developer needed to add a new brand to monitor.
 - **Manage your own search keywords** — the words that make a match suspicious (login, wallet, phishing, secret, apk...) are fully editable from the UI, each with a category and priority. The system also auto-promotes new keywords on its own when a confirmed high-severity finding shows a pattern worth watching for.
 - **Run scans on demand** — start a scan for one specific brand, a raw custom GitHub query, or everything at once, and cap how many repositories it should check. Scans run in the background and can be cancelled or retried.
-- **Search GitHub yourself** — a built-in search page lets anyone run an ad-hoc GitHub search, either by typing a query directly or by picking keywords from a list and clicking "Apply" to have a valid query built automatically — no need to learn GitHub's search syntax.
+- **Search GitHub yourself** — a built-in search page lets anyone run an ad-hoc GitHub search, either by typing a query directly or by picking keywords from a list and clicking "Apply" to have a valid query built automatically — no need to learn GitHub's search syntax. Repos your workspace has already reviewed are hidden from new results by default (toggle "Include already-reviewed repos" to see them again), and repository search can be narrowed to a specific creation-date window.
 - **Show real evidence, safely** — every finding shows exactly what was found and where (file, line, matched text), so nobody has to just trust a score.
 - **Alert on the important stuff** — critical and high-risk findings automatically raise an in-app alert so nothing serious gets buried in a long list.
 - **Keep teams separate** — more than one team/company can use this at once. Each team ("workspace") only ever sees its own brands, keywords, scans, and findings — never anyone else's.
@@ -192,7 +192,14 @@ POST /api/v1/scans/manual
 { "customQuery": "kpmg filename:.env", "searchKind": "code", "maxRepos": 50 }
 ```
 
-`maxRepos` is clamped server-side to the admin-configured ceiling (`SCAN_MAX_REPOS`) — a workspace can ask for fewer, never more. Every scan is started deliberately, on demand — there is no automatic background schedule.
+or narrowed to repos created in a specific window:
+
+```http
+POST /api/v1/scans/manual
+{ "brandId": "…", "createdFrom": "2026-07-31", "createdTo": "2026-08-02" }
+```
+
+`maxRepos` is clamped server-side to the admin-configured ceiling (`SCAN_MAX_REPOS`) — a workspace can ask for fewer, never more. `createdFrom`/`createdTo` map to GitHub's `created:` search qualifier and only apply to repository search (rejected alongside `searchKind: "code"`, which doesn't support it). Every scan is started deliberately, on demand — there is no automatic background schedule.
 
 ### Worker tuning (env)
 
@@ -222,6 +229,8 @@ Each repository tracks: `githubId`, `updated_at` / `pushed_at`, default branch, 
 | `failed_only` | Only re-analyze repos with `lastProcessingFailed` |
 
 Rescan also happens when: content SHA changed, ruleset version changed, previous processing failed, no successful scan exists, or the client sets `forceFullScan: true`.
+
+The commit SHA behind that decision comes from `git ls-remote` (git's own transport) for any repo eligible for clone-based scanning — not a GitHub REST call. GitHub's REST equivalent (`getRepositoryHead`) is actually *two* REST calls (repo metadata, then the branch ref), each carrying its own Redis rate-limit bookkeeping; for a clone-eligible repo, none of that happens anymore. Falls back to the REST check for anything not clone-eligible, or if `git ls-remote` itself fails.
 
 Checkpoints after each stage store search pagination cursors and completed/skipped/failed github IDs so interrupted jobs resume without redoing finished work. Finding upserts are fingerprint-keyed (`githubId` + rules) so resume/retry does not create duplicates; lifecycle is recorded as `new` / `unchanged` / `reopened` / `resolved`.
 
@@ -257,6 +266,7 @@ All GitHub traffic goes through a single managed client (`GitHubHttpClient`). No
 | Fairness | Per-workspace daily budget + concurrency; global concurrency cap |
 | Per-workspace tokens | A workspace using its own GitHub token gets fully separate quota tracking — its usage never competes with, or is blocked by, the shared token's state |
 | Conditional GETs | ETag / `If-None-Match` for content endpoints |
+| Search dedup | Identical search calls (same path + params) within `GITHUB_SEARCH_DEDUP_CACHE_MS` (default 3 min) are answered from memory — no GitHub call, no Redis bookkeeping. Search is the strictest quota (30/min vs core's 5,000/hr) and the one thing clone-scan can't route around, so overlapping keywords across brands or a resumed scan re-issuing a page don't each cost a fresh call. Shared across every workspace since results are public GitHub data |
 | Observability | Structured logs (no tokens) + counters; `GET /api/v1/github/rate-limit` |
 | Redis command volume | Every call re-checks pause/quota state in Redis before proceeding; these reads are cached in-process for `GITHUB_RATE_LIMIT_CACHE_MS` (default 1s) so a burst of calls collapses into one Redis round trip instead of one per call. Writes are batched the same way: request-count metrics accumulate in memory and flush periodically instead of one write per call, and rate-limit snapshot writes are throttled to the same interval — except when remaining quota nears the pause threshold, which always flushes immediately so pause detection is never delayed |
 
@@ -307,8 +317,8 @@ All routes are prefixed with `/api/v1` and documented in Swagger.
 | GET | `/findings/:id` | Yes | Finding detail |
 | PATCH | `/findings/:id/status` | Yes | Triage status + note |
 | GET | `/scans` | Yes | Scan history |
-| POST | `/scans/manual` | Yes | Enqueue a scan (202); body `{ mode?, forceFullScan?, brandId?, customQuery?, searchKind?, maxRepos? }` |
-| GET | `/scans/search` | Yes | Ad-hoc GitHub repo/code search through the managed client |
+| POST | `/scans/manual` | Yes | Enqueue a scan (202); body `{ mode?, forceFullScan?, brandId?, customQuery?, searchKind?, maxRepos?, createdFrom?, createdTo? }` |
+| GET | `/scans/search` | Yes | Ad-hoc GitHub repo/code search through the managed client; query params `q, page, type, createdFrom?, createdTo?, includeSeen?` |
 | GET | `/scans/:id` | Yes | Scan job detail |
 | GET | `/scans/:id/progress` | Yes | Poll latest progress |
 | GET | `/scans/:id/events` | Yes | SSE progress stream |
