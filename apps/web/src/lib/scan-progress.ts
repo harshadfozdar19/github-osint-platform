@@ -34,10 +34,13 @@ export interface ScanProgressCounts {
   reposSkipped?: number;
   reposRescanned?: number;
   reposResumed?: number;
+  reposPendingAnalysis?: number;
   findingsNew?: number;
   findingsUnchanged?: number;
   findingsReopened?: number;
   findingsResolved?: number;
+  /** Repos processed in this scan whose finding came out HIGH or CRITICAL severity - "how many are actually a real threat". */
+  findingsHighRisk?: number;
 }
 
 export interface ScanProgressEvent {

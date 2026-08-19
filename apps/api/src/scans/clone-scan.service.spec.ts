@@ -82,9 +82,10 @@ describe('CloneScanService', () => {
       await expect(service.shouldAttempt(100)).resolves.toBe(false);
     });
 
-    it('is false when the repo size is unknown - conservative default', async () => {
+    it('is attempted (git-availability permitting) when the repo size is unknown, relying on the clone timeout as the safety net', async () => {
+      mockSpawnExit(0);
       const service = new CloneScanService(buildConfig());
-      await expect(service.shouldAttempt(undefined)).resolves.toBe(false);
+      await expect(service.shouldAttempt(undefined)).resolves.toBe(true);
     });
 
     it('is false when the repo exceeds the configured size cap', async () => {
@@ -128,37 +129,65 @@ describe('CloneScanService', () => {
       );
     });
 
-    it('selects credential-priority files, excludes vendor dirs, and reads the README', async () => {
-      // Simulate a successful clone by writing fixture files into whatever
-      // temp dir mkdtemp creates, instead of actually invoking git/network.
+    /** Fixture repo tree, as `git ls-tree -z --name-only` would report it. */
+    const FIXTURE_PATHS = [
+      'README.md',
+      '.env',
+      'node_modules/somepkg/index.js',
+      'src.js',
+    ];
+    const FIXTURE_CONTENT: Record<string, string> = {
+      'README.md': '# Demo repo',
+      '.env': 'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE',
+      'node_modules/somepkg/index.js': 'module.exports = {}',
+      'src.js': 'console.log("hi")',
+    };
+
+    /**
+     * Simulates the two git steps the real flow now runs: clone (a plain
+     * shallow clone - materializes every fixture file on disk immediately,
+     * no separate checkout step) and ls-tree (reports the fixture paths from
+     * what's now actually on disk).
+     */
+    function mockPartialCloneFlow() {
       (spawn as unknown as jest.Mock).mockImplementation(
         (_cmd: string, args: string[]) => {
-          const dir = args[args.length - 1];
-          dirsToClean.push(dir);
           const emitter = new EventEmitter() as EventEmitter & {
+            stdout?: EventEmitter;
             kill?: () => void;
           };
           emitter.kill = jest.fn();
-          void (async () => {
-            await mkdir(dir, { recursive: true });
-            await writeFile(join(dir, 'README.md'), '# Demo repo');
-            await writeFile(
-              join(dir, '.env'),
-              'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE',
-            );
-            await mkdir(join(dir, 'node_modules', 'somepkg'), {
-              recursive: true,
+          emitter.stdout = new EventEmitter();
+
+          if (args.includes('clone')) {
+            const dir = args[args.length - 1];
+            dirsToClean.push(dir);
+            void (async () => {
+              for (const p of FIXTURE_PATHS) {
+                const abs = join(dir, p);
+                await mkdir(join(abs, '..'), { recursive: true });
+                await writeFile(abs, FIXTURE_CONTENT[p] ?? '');
+              }
+              emitter.emit('exit', 0);
+            })();
+          } else if (args.includes('ls-tree')) {
+            process.nextTick(() => {
+              emitter.stdout?.emit(
+                'data',
+                Buffer.from(FIXTURE_PATHS.join('\0') + '\0'),
+              );
+              emitter.emit('exit', 0);
             });
-            await writeFile(
-              join(dir, 'node_modules', 'somepkg', 'index.js'),
-              'module.exports = {}',
-            );
-            await writeFile(join(dir, 'src.js'), 'console.log("hi")');
-            emitter.emit('exit', 0);
-          })();
+          } else {
+            process.nextTick(() => emitter.emit('exit', 0));
+          }
           return emitter;
         },
       );
+    }
+
+    it('selects credential-priority files, excludes vendor dirs, and reads the README', async () => {
+      mockPartialCloneFlow();
 
       const service = new CloneScanService(buildConfig());
       const result = await service.cloneAndScan('acme', 'demo');
@@ -171,10 +200,301 @@ describe('CloneScanService', () => {
       );
     });
 
+    it('reports only the priority-selected files in smallFileTexts, not every file on disk', async () => {
+      mockPartialCloneFlow();
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo');
+
+      // node_modules is excluded from selection even though it's present on
+      // disk after the full clone - proof the priority filter still governs
+      // what gets reported, not just what git happened to materialize.
+      expect(
+        result?.smallFileTexts.some((f) => f.path.includes('node_modules')),
+      ).toBe(false);
+      expect(result?.smallFileTexts.some((f) => f.path === '.env')).toBe(true);
+      expect(result?.readmePath).toBe('README.md');
+    });
+
     it('returns null (and does not throw) when the clone fails', async () => {
       mockSpawnExit(128);
       const service = new CloneScanService(buildConfig());
       await expect(service.cloneAndScan('acme', 'missing')).resolves.toBeNull();
+    });
+
+    it('passes --branch to git clone when a branch is specified, for cloning a non-default side branch', async () => {
+      mockPartialCloneFlow();
+      const service = new CloneScanService(buildConfig());
+      await service.cloneAndScan('acme', 'demo', [], { branch: 'feature/x' });
+
+      const cloneCall = (spawn as unknown as jest.Mock).mock.calls.find(
+        ([, args]: [string, string[]]) => args.includes('clone'),
+      );
+      expect(cloneCall).toBeDefined();
+      const args: string[] = cloneCall[1];
+      const branchFlagIndex = args.indexOf('--branch');
+      expect(branchFlagIndex).toBeGreaterThan(-1);
+      expect(args[branchFlagIndex + 1]).toBe('feature/x');
+    });
+
+    it('never adds --branch when no branch is given, for the normal default-branch flow', async () => {
+      mockPartialCloneFlow();
+      const service = new CloneScanService(buildConfig());
+      await service.cloneAndScan('acme', 'demo');
+
+      const cloneCall = (spawn as unknown as jest.Mock).mock.calls.find(
+        ([, args]: [string, string[]]) => args.includes('clone'),
+      );
+      expect(cloneCall[1]).not.toContain('--branch');
+    });
+
+    it('refuses to clone (fails closed to null, never calls git) when the branch name looks like an injected flag', async () => {
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo', [], {
+        branch: '--upload-pack=evil',
+      });
+      expect(result).toBeNull();
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it('finds brand mentions anywhere in the tree via git grep, not just the selected files', async () => {
+      (spawn as unknown as jest.Mock).mockImplementation(
+        (_cmd: string, args: string[]) => {
+          const emitter = new EventEmitter() as EventEmitter & {
+            stdout?: EventEmitter;
+            kill?: () => void;
+          };
+          emitter.kill = jest.fn();
+          emitter.stdout = new EventEmitter();
+
+          if (args.includes('clone')) {
+            const dir = args[args.length - 1];
+            dirsToClean.push(dir);
+            void (async () => {
+              await mkdir(dir, { recursive: true });
+              emitter.emit('exit', 0);
+            })();
+          } else if (args.includes('ls-tree')) {
+            process.nextTick(() => {
+              emitter.stdout?.emit(
+                'data',
+                Buffer.from(FIXTURE_PATHS.join('\0') + '\0'),
+              );
+              emitter.emit('exit', 0);
+            });
+          } else if (args.includes('grep')) {
+            process.nextTick(() => {
+              emitter.stdout?.emit(
+                'data',
+                Buffer.from(
+                  'HEAD:src/deep/nested/scraper.py:42:process.acmebrand.login here\n',
+                ),
+              );
+              emitter.emit('exit', 0);
+            });
+          } else {
+            process.nextTick(() => emitter.emit('exit', 0));
+          }
+          return emitter;
+        },
+      );
+
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo', ['acmebrand']);
+
+      expect(result?.brandMatches).toEqual([
+        {
+          alias: 'acmebrand',
+          path: 'src/deep/nested/scraper.py',
+          lineNumber: 42,
+          line: 'process.acmebrand.login here',
+        },
+      ]);
+    });
+
+    it('rejects a git-grep hit where the alias is only buried mid-word in an unrelated identifier ("fyers" inside "identifyers")', async () => {
+      (spawn as unknown as jest.Mock).mockImplementation(
+        (_cmd: string, args: string[]) => {
+          const emitter = new EventEmitter() as EventEmitter & {
+            stdout?: EventEmitter;
+            kill?: () => void;
+          };
+          emitter.kill = jest.fn();
+          emitter.stdout = new EventEmitter();
+
+          if (args.includes('clone')) {
+            const dir = args[args.length - 1];
+            dirsToClean.push(dir);
+            void (async () => {
+              await mkdir(dir, { recursive: true });
+              emitter.emit('exit', 0);
+            })();
+          } else if (args.includes('ls-tree')) {
+            process.nextTick(() => {
+              emitter.stdout?.emit(
+                'data',
+                Buffer.from(FIXTURE_PATHS.join('\0') + '\0'),
+              );
+              emitter.emit('exit', 0);
+            });
+          } else if (args.includes('grep')) {
+            process.nextTick(() => {
+              // git grep -F is a plain fixed-string search - it has no
+              // concept of word boundaries, so it genuinely reports this
+              // line as a hit for the literal substring "fyers".
+              emitter.stdout?.emit(
+                'data',
+                Buffer.from(
+                  'HEAD:docs/glossary.py:5:a list of identifyers here\n',
+                ),
+              );
+              emitter.emit('exit', 0);
+            });
+          } else {
+            process.nextTick(() => emitter.emit('exit', 0));
+          }
+          return emitter;
+        },
+      );
+
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo', ['fyers']);
+
+      expect(result?.brandMatches).toEqual([]);
+    });
+
+    it('skips the alias/keyword grep passes when none are given, but still runs the secret-anchor pass', async () => {
+      mockPartialCloneFlow();
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo');
+      expect(result?.brandMatches).toEqual([]);
+      expect(result?.keywordMatches).toEqual([]);
+      // Secret-anchor grep is unconditional - it doesn't depend on any brand
+      // being configured at all, so exactly one grep call still happens.
+      const grepCalls = (spawn as unknown as jest.Mock).mock.calls.filter((c) =>
+        (c[1] as string[]).includes('grep'),
+      );
+      expect(grepCalls).toHaveLength(1);
+    });
+
+    /** Builds a full mock flow, letting the caller supply grep stdout keyed by whichever `-e` patterns that grep call was given. */
+    function mockCloneFlowWithGrepRouter(
+      grepStdoutFor: (patterns: string[]) => string,
+    ) {
+      (spawn as unknown as jest.Mock).mockImplementation(
+        (_cmd: string, args: string[]) => {
+          const emitter = new EventEmitter() as EventEmitter & {
+            stdout?: EventEmitter;
+            kill?: () => void;
+          };
+          emitter.kill = jest.fn();
+          emitter.stdout = new EventEmitter();
+
+          if (args.includes('clone')) {
+            const dir = args[args.length - 1];
+            dirsToClean.push(dir);
+            void (async () => {
+              for (const p of FIXTURE_PATHS) {
+                const abs = join(dir, p);
+                await mkdir(join(abs, '..'), { recursive: true });
+                await writeFile(abs, FIXTURE_CONTENT[p] ?? '');
+              }
+              emitter.emit('exit', 0);
+            })();
+          } else if (args.includes('ls-tree')) {
+            process.nextTick(() => {
+              emitter.stdout?.emit(
+                'data',
+                Buffer.from(FIXTURE_PATHS.join('\0') + '\0'),
+              );
+              emitter.emit('exit', 0);
+            });
+          } else if (args.includes('grep')) {
+            const patterns = args
+              .filter((_, i) => args[i - 1] === '-e')
+              .filter(Boolean);
+            const stdout = grepStdoutFor(patterns);
+            process.nextTick(() => {
+              if (stdout) emitter.stdout?.emit('data', Buffer.from(stdout));
+              emitter.emit('exit', stdout ? 0 : 1);
+            });
+          } else {
+            process.nextTick(() => emitter.emit('exit', 0));
+          }
+          return emitter;
+        },
+      );
+    }
+
+    it('attributes a combined keyword grep hit back to the specific keyword(s) it actually matched', async () => {
+      mockCloneFlowWithGrepRouter((patterns) => {
+        // Only the keyword-grep call includes these two terms together.
+        if (patterns.includes('otp') && patterns.includes('kyc fraud')) {
+          return 'HEAD:config/app.py:10:handle_otp_bypass_flow()\n';
+        }
+        return '';
+      });
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo', [], {
+        customKeywords: ['otp', 'kyc fraud'],
+      });
+      expect(result?.keywordMatches).toEqual([
+        {
+          alias: 'otp',
+          path: 'config/app.py',
+          lineNumber: 10,
+          line: 'handle_otp_bypass_flow()',
+        },
+      ]);
+    });
+
+    it('rejects a combined keyword grep hit for a keyword only buried mid-word in an unrelated identifier', async () => {
+      mockCloneFlowWithGrepRouter((patterns) => {
+        if (patterns.includes('fyers')) {
+          // Genuinely matched by git grep -F (fixed-string), but "fyers" is
+          // not a real word/identifier component here.
+          return 'HEAD:docs/glossary.py:5:a list of identifyers here\n';
+        }
+        return '';
+      });
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo', [], {
+        customKeywords: ['fyers'],
+      });
+      expect(result?.keywordMatches).toEqual([]);
+    });
+
+    it('returns raw secret-anchor candidates without treating a mere anchor hit as a confirmed secret', async () => {
+      mockCloneFlowWithGrepRouter((patterns) => {
+        // The secret-anchor call includes AKIA among its patterns.
+        if (patterns.includes('AKIA')) {
+          return 'HEAD:config/notes.md:3:mentions AKIA prefix in passing\n';
+        }
+        return '';
+      });
+      const service = new CloneScanService(buildConfig());
+      const result = await service.cloneAndScan('acme', 'demo');
+      expect(result?.secretCandidates).toEqual([
+        {
+          path: 'config/notes.md',
+          lineNumber: 3,
+          line: 'mentions AKIA prefix in passing',
+        },
+      ]);
+    });
+
+    it('respects ENABLE_DEEP_KEYWORD_GREP=false and ENABLE_DEEP_SECRET_GREP=false', async () => {
+      mockPartialCloneFlow();
+      const service = new CloneScanService(
+        buildConfig({
+          ENABLE_DEEP_KEYWORD_GREP: 'false',
+          ENABLE_DEEP_SECRET_GREP: 'false',
+        }),
+      );
+      const result = await service.cloneAndScan('acme', 'demo', [], {
+        customKeywords: ['otp'],
+      });
+      expect(result?.keywordMatches).toEqual([]);
+      expect(result?.secretCandidates).toEqual([]);
     });
   });
 

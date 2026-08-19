@@ -4,6 +4,23 @@ import { Severity, ThreatCategory } from '../../common/enums';
 
 export type DetectionDocument = HydratedDocument<Detection>;
 
+/**
+ * Outcome of an analyst-triggered live check against the credential's own
+ * provider (see CredentialVerificationService) - never stores the raw
+ * secret value itself, only the verdict.
+ */
+@Schema({ _id: false })
+export class DetectionVerification {
+  @Prop({ required: true })
+  status!: string;
+
+  @Prop({ required: true })
+  detail!: string;
+
+  @Prop({ required: true })
+  checkedAt!: Date;
+}
+
 @Schema({ timestamps: true, collection: 'detections' })
 export class Detection {
   @Prop({ type: Types.ObjectId, ref: 'Workspace', required: true, index: true })
@@ -45,6 +62,9 @@ export class Detection {
 
   @Prop({ type: String, default: '' })
   matchedText?: string;
+
+  @Prop({ type: DetectionVerification })
+  verification?: DetectionVerification;
 }
 
 export const DetectionSchema = SchemaFactory.createForClass(Detection);

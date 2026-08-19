@@ -32,6 +32,10 @@ export class GitHubHttpClient {
   private readonly workspaceMaxConcurrency: number;
   private readonly globalMaxConcurrency: number;
   private readonly maxInlineWaitMs: number;
+  /** Minimum ms between successive repo-search requests for the same token - see paceRequest. */
+  private readonly searchMinIntervalMs: number;
+  /** Minimum ms between successive code-search requests for the same token - code search's 10/min cap needs far more spacing than repo search's 30/min. */
+  private readonly codeSearchMinIntervalMs: number;
 
   private readonly globalToken?: string;
 
@@ -88,6 +92,24 @@ export class GitHubHttpClient {
     );
     this.searchCacheTtlMs = Number(
       this.config.get('GITHUB_SEARCH_DEDUP_CACHE_MS') || 180_000,
+    );
+    // Defaults leave a small margin under GitHub's actual caps (30/min repo
+    // search, 10/min code search) rather than pacing right up against
+    // them - this absorbs jitter/clock-skew across concurrent workers
+    // without ever tripping the much costlier threshold-pause below.
+    // Requests for one token/resource are already serialized one-at-a-time
+    // via reserveNextSlot (never bursted), which is what actually keeps
+    // this safe from GitHub's secondary/abuse rate limit - that limit is
+    // triggered by bursts and concurrency, not by running close to the
+    // primary per-minute cap on its own. ~5% margin (down from ~10%)
+    // trades a bit of that jitter cushion for meaningfully faster
+    // discovery; if pauses from GITHUB_LOW_REMAINING/PAUSE_REMAINING start
+    // showing up more often, widen these back out.
+    this.searchMinIntervalMs = Number(
+      this.config.get('GITHUB_SEARCH_MIN_INTERVAL_MS') || 2100,
+    );
+    this.codeSearchMinIntervalMs = Number(
+      this.config.get('GITHUB_CODE_SEARCH_MIN_INTERVAL_MS') || 6200,
     );
 
     this.client = axios.create({
@@ -178,10 +200,22 @@ export class GitHubHttpClient {
    * data immediately instead of waiting for the first live scan, and so an
    * invalid token surfaces as an error right away instead of silently
    * failing later mid-scan.
+   *
+   * Also clears any pause/secondary-backoff state already recorded for this
+   * scope - scope is keyed by workspace id (`workspace:{id}`), not by the
+   * token value itself, so swapping in a brand-new token does NOT change the
+   * scope key. Without this, a workspace whose OLD token got paused for
+   * exhausting its quota would still see every request blocked by that same
+   * stale pause immediately after saving a fresh token that has never made
+   * a single request yet. This is the only caller of this method, called
+   * exactly once right after a token is saved - safe to unconditionally
+   * clear here in a way that would NOT be safe from any other call site.
    */
   async refreshRateLimitSnapshot(ctx: GitHubRequestContext): Promise<void> {
     const resolved = await this.resolveToken(ctx);
     if (!resolved) return;
+    await this.store.clearAllPauses(resolved.scope);
+    await this.store.clearSecondary(resolved.scope);
     const res = await this.request<{
       resources: Record<
         string,
@@ -273,9 +307,21 @@ export class GitHubHttpClient {
     );
     if (!acquired) {
       await this.store.incrMetric('budgetRejects');
+      // Unlike a real rate-limit pause (which can genuinely need up to a
+      // minute to clear) or an exhausted daily budget, a concurrency-slot
+      // rejection is transient - the workspace's in-flight requests are
+      // capped at workspaceMaxConcurrency, and slots free up as soon as any
+      // one of them completes, typically within a second or two. Without an
+      // explicit retryAfterMs here, delayJobForGitHubQuota falls back to a
+      // flat 60s delay, which - with several keyword-scoped scans
+      // contending for the same small concurrency cap - makes every scan
+      // past the first couple look stalled for up to a full minute at a
+      // time instead of just waiting its short turn.
       throw new GitHubClientError(
         'GitHub concurrency limit reached for workspace or globally',
         'BUDGET',
+        undefined,
+        2_000,
       );
     }
 
@@ -448,7 +494,7 @@ export class GitHubHttpClient {
       );
     }
     if (status === 403) {
-      await this.handleForbidden(headerMap, response.data, scope);
+      await this.handleForbidden(headerMap, response.data, scope, resource);
     }
     if (status === 429) {
       await this.handleRateLimitResponse(
@@ -504,6 +550,7 @@ export class GitHubHttpClient {
     headers: Record<string, string>,
     body: unknown,
     scope: TokenScope,
+    resource: GitHubResource,
   ): Promise<never> {
     const message = this.extractMessage(body);
     const secondary =
@@ -511,9 +558,17 @@ export class GitHubHttpClient {
       Boolean(headers['retry-after']);
 
     if (secondary || headers['x-ratelimit-remaining'] === '0') {
+      // GitHub signals primary rate-limit exhaustion for search/code_search
+      // via a 403 (not 429) - previously hardcoded to 'core' here regardless
+      // of which resource the request actually was, so e.g. a code_search
+      // 403 wrongly paused 'core' requests (unaffected, quota untouched)
+      // while pausing on the WRONG key - each GitHub resource has its own
+      // independent quota (see enforcePauseAndQuota's per-resource pause
+      // lookup), so the pause must be attributed to the resource that was
+      // actually exhausted.
       await this.handleRateLimitResponse(
         headers,
-        secondary ? 'secondary' : 'core',
+        secondary ? 'secondary' : resource,
         secondary ? 'SECONDARY_RATE_LIMIT' : 'RATE_LIMIT',
         scope,
       );
@@ -563,7 +618,10 @@ export class GitHubHttpClient {
       await this.delayOrThrow(secondaryUntil, ctx, 'secondary');
     }
 
-    const pause = await this.store.getPause(scope);
+    // Scoped to THIS request's resource only - a code_search pause must
+    // never block a core or search request on the same token, since each
+    // GitHub resource has its own independent quota (see getPause's doc).
+    const pause = await this.store.getPause(scope, resource);
     if (pause.paused && pause.pausedUntil) {
       await this.delayOrThrow(
         pause.pausedUntil,
@@ -571,6 +629,17 @@ export class GitHubHttpClient {
         pause.resource || resource,
       );
     }
+
+    // Proactive pacing: space out search/code_search requests instead of
+    // bursting until the threshold check below trips a pause. Bursting
+    // then pausing for a full window reset (up to 60s) wastes far more
+    // wall-clock time than spending the same budget evenly - and with
+    // several keyword-scoped scans now able to run concurrently for the
+    // same brand (same token), their requests would otherwise race each
+    // other toward the same shared quota. reserveNextSlot is Redis-atomic
+    // across all of them, so concurrent callers queue up in order rather
+    // than all bursting together.
+    await this.paceRequest(resource, ctx, scope);
 
     const snapshot = await this.store.getSnapshot(scope, resource);
     if (
@@ -586,6 +655,52 @@ export class GitHubHttpClient {
       );
       await this.delayOrThrow(snapshot.resetAt, ctx, resource);
     }
+  }
+
+  /**
+   * Proactive request pacing for search/code_search - a no-op for every
+   * other resource (core's 5,000/hr budget has no need for it). Reserves
+   * this request's slot via a Redis-atomic minimum-interval check, then
+   * either sleeps inline (the common case - a single scan's own requests,
+   * or a couple of concurrent keyword scans queuing a few seconds apart)
+   * or - only when enough concurrent requests for the same resource have
+   * piled up that the reserved slot is far enough out to not be worth
+   * blocking a worker on - reschedules the job the same way a genuine
+   * quota pause does (GitHubClientError('RATE_LIMIT'), picked up by
+   * delayJobForGitHubQuota), freeing the worker to pick up other work
+   * instead of sitting idle mid-sleep.
+   */
+  private async paceRequest(
+    resource: GitHubResource,
+    ctx: GitHubRequestContext,
+    scope: TokenScope,
+  ): Promise<void> {
+    const minIntervalMs =
+      resource === 'search'
+        ? this.searchMinIntervalMs
+        : resource === 'code_search'
+          ? this.codeSearchMinIntervalMs
+          : 0;
+    if (minIntervalMs <= 0) return;
+
+    const waitMs = await this.store.reserveNextSlot(
+      scope,
+      resource,
+      minIntervalMs,
+      this.maxInlineWaitMs,
+    );
+    if (waitMs <= 0) return;
+    if (waitMs <= this.maxInlineWaitMs) {
+      await sleep(waitMs, ctx.signal);
+      return;
+    }
+    throw new GitHubClientError(
+      `Pacing ${resource} requests - next slot in ${waitMs}ms`,
+      'RATE_LIMIT',
+      429,
+      waitMs,
+      Date.now() + waitMs,
+    );
   }
 
   private async delayOrThrow(
@@ -656,9 +771,9 @@ export class GitHubHttpClient {
         resource,
       );
     } else if (remaining > this.lowRemaining) {
-      const pause = await this.store.getPause(scope);
-      if (pause.paused && pause.resource === resource) {
-        await this.store.clearPause(scope);
+      const pause = await this.store.getPause(scope, resource);
+      if (pause.paused) {
+        await this.store.clearPause(scope, resource);
       }
     }
   }

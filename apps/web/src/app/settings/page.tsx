@@ -3,8 +3,9 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
-import { LoadingBlock } from '@/components/ui';
+import { Alert, Button, Card, Field, Input, LoadingBlock } from '@/components/ui';
 import { api, getWorkspaceId, GithubTokenStatus } from '@/lib/api';
+import { formatDateTime } from '@/lib/date';
 
 export default function SettingsPage() {
   const [status, setStatus] = useState<GithubTokenStatus | null>(null);
@@ -90,9 +91,9 @@ export default function SettingsPage() {
   return (
     <RequireAuth>
       <AppShell title="Settings" subtitle="Workspace-level configuration.">
-        <section className="max-w-xl rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-5 space-y-4">
+        <Card className="max-w-xl space-y-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">GitHub token</h2>
+            <h2 className="text-sm font-semibold">GitHub token</h2>
             <p className="mt-1 text-xs text-[var(--muted)]">
               Optional. If set, this workspace&apos;s scans use it instead of the shared
               server token, so it draws its own GitHub quota instead of sharing one across
@@ -108,10 +109,10 @@ export default function SettingsPage() {
               {status.configured ? (
                 <>
                   Currently configured — ending in{' '}
-                  <code className="text-[var(--accent)]">•••{status.last4}</code>
-                  {status.updatedAt
-                    ? ` (updated ${new Date(status.updatedAt).toLocaleString()})`
-                    : ''}
+                  <code className="font-[family-name:var(--font-mono)] text-[var(--accent)]">
+                    •••{status.last4}
+                  </code>
+                  {status.updatedAt ? ` (updated ${formatDateTime(status.updatedAt)})` : ''}
                 </>
               ) : (
                 'No workspace-specific token set — using the shared server token, if configured.'
@@ -120,39 +121,28 @@ export default function SettingsPage() {
           ) : null}
 
           <form onSubmit={onSave} className="flex flex-wrap items-end gap-3">
-            <label className="text-sm min-w-[240px] flex-1">
-              <span className="mb-1 block text-[var(--muted)]">New token</span>
-              <input
+            <Field label="New token" className="min-w-[240px] flex-1">
+              <Input
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="ghp_..."
                 autoComplete="off"
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
               />
-            </label>
-            <button
-              type="submit"
-              disabled={saving || !token.trim()}
-              className="rounded-md bg-[var(--accent-dim)] px-4 py-2 text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
-            >
+            </Field>
+            <Button type="submit" disabled={!token.trim()} loading={saving}>
               {saving ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
             {status?.configured ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={onClear}
-                className="rounded-md border border-[var(--border)] px-4 py-2 disabled:opacity-60"
-              >
+              <Button type="button" variant="outline" disabled={saving} onClick={onClear}>
                 Clear
-              </button>
+              </Button>
             ) : null}
           </form>
 
-          {message ? <p className="text-sm text-[var(--accent)]">{message}</p> : null}
-          {error ? <p className="text-sm text-[var(--danger)]">{error}</p> : null}
-        </section>
+          {message ? <Alert tone="success">{message}</Alert> : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+        </Card>
       </AppShell>
     </RequireAuth>
   );

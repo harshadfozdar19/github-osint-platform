@@ -1,13 +1,15 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
+import { Plus_Jakarta_Sans, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
 
-const sans = IBM_Plex_Sans({
+const sans = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-sans',
 });
 
+// Kept as a distinct, deliberate secondary face - used only for code,
+// hashes, scores and other tabular/data values, never for body text.
 const mono = IBM_Plex_Mono({
   subsets: ['latin'],
   weight: ['400', '500'],

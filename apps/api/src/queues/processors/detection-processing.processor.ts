@@ -70,11 +70,25 @@ export class DetectionProcessingProcessor extends WorkerHost {
           githubPushedAt: data.ctx.githubPushedAt
             ? new Date(data.ctx.githubPushedAt)
             : undefined,
+          ownerAccountCreatedAt: data.ctx.ownerAccountCreatedAt
+            ? new Date(data.ctx.ownerAccountCreatedAt)
+            : undefined,
+          ownerFollowers: data.ctx.ownerFollowers,
+          ownerPublicRepos: data.ctx.ownerPublicRepos,
           filePaths: data.ctx.filePaths,
           readmeText: data.ctx.readmeText,
+          readmePath: data.ctx.readmePath,
           smallFileTexts: data.ctx.smallFileTexts,
+          brandFileMatches: data.ctx.brandFileMatches,
+          keywordFileMatches: data.ctx.keywordFileMatches,
+          fullRepoSecretCandidates: data.ctx.fullRepoSecretCandidates,
+          matchedBrandId: data.ctx.matchedBrandId,
           matchedBrandName: data.ctx.matchedBrandName,
           matchedBrandAliases: data.ctx.matchedBrandAliases,
+          matchedBrandTrustedOwners: data.ctx.matchedBrandTrustedOwners,
+          matchedBrandKeywords: data.ctx.matchedBrandKeywords,
+          commitMessages: data.ctx.commitMessages,
+          commitAuthors: data.ctx.commitAuthors,
         };
 
         const result = await this.pipeline.runDetectionAndPersist({
@@ -84,7 +98,9 @@ export class DetectionProcessingProcessor extends WorkerHost {
           githubId: data.githubId,
           fullName: data.fullName,
           ctx,
+          brandId: data.ctx.matchedBrandId,
           brandName: data.ctx.matchedBrandName,
+          internalAudit: data.internalAudit,
         });
 
         await this.pipeline.upsertRepository(
@@ -112,6 +128,7 @@ export class DetectionProcessingProcessor extends WorkerHost {
             rulesetVersion: data.rulesetVersion,
             scanJobId: data.scanJobId,
             markSuccess: true,
+            internalAudit: data.internalAudit,
           },
         );
 
@@ -132,13 +149,6 @@ export class DetectionProcessingProcessor extends WorkerHost {
             fullName: data.fullName,
             githubId: data.githubId,
             rulesetVersion: data.rulesetVersion,
-            matchedBrand: data.ctx.matchedBrandName
-              ? {
-                  id: '',
-                  name: data.ctx.matchedBrandName,
-                  aliases: data.ctx.matchedBrandAliases || [],
-                }
-              : undefined,
           });
           await this.expansion.promoteKeywordsFromFinding(
             data.workspaceId,
@@ -153,6 +163,11 @@ export class DetectionProcessingProcessor extends WorkerHost {
           findingsUnchanged: result.findingsUnchanged,
           findingsReopened: result.findingsReopened,
           findingsResolved: result.findingsResolved,
+          // isHighImpact already answers "is this repo's finding severe
+          // enough to matter" (used just above to decide fan-out expansion)
+          // - reuse it here as the "actually a real threat" tally rather
+          // than recomputing the same check.
+          findingsHighRisk: isHighImpact && result.findingId ? 1 : 0,
           rescanned: true,
           resumed: data.resumed === true,
           githubId: data.githubId,
@@ -194,7 +209,11 @@ export class DetectionProcessingProcessor extends WorkerHost {
             owner: { login: data.ctx.owner },
             name: data.ctx.name,
           },
-          { scanJobId: data.scanJobId, markFailed: true },
+          {
+            scanJobId: data.scanJobId,
+            markFailed: true,
+            internalAudit: data.internalAudit,
+          },
         );
         await this.scanState.completeAnalysisUnit(data.scanJobId, {
           failed: true,

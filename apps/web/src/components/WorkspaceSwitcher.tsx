@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import {
@@ -61,7 +61,7 @@ export function WorkspaceSwitcher() {
 
   if (loading) {
     return (
-      <p className="px-2 text-xs text-[var(--muted)]" aria-live="polite">
+      <p className="px-2 text-xs" style={{ color: '#ffffff' }} aria-live="polite">
         Loading workspaces…
       </p>
     );
@@ -69,23 +69,35 @@ export function WorkspaceSwitcher() {
 
   if (workspaces.length === 0) {
     return (
-      <p className="px-2 text-xs text-[var(--muted)]">No workspaces available</p>
+      <p className="px-2 text-xs" style={{ color: '#ffffff' }}>No workspaces available</p>
     );
   }
 
   return (
-    <div className="px-2 space-y-1">
-      <label htmlFor="workspace-switcher" className="text-xs text-[var(--muted)]">
+    <div className="px-1 space-y-1.5">
+      <label
+        htmlFor="workspace-switcher"
+        className="px-2 text-[11px] font-semibold uppercase tracking-wider text-white"
+      >
         Workspace
       </label>
       <select
         id="workspace-switcher"
         value={currentId}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-sm"
+        className="w-full rounded-lg border border-[var(--sidebar-border)] bg-[var(--sidebar-card-bg)] px-2.5 py-2 text-sm font-medium text-white outline-none transition-colors duration-150 focus:border-[var(--accent)]"
       >
         {workspaces.map((ws) => (
-          <option key={ws._id} value={ws._id}>
+          // Inline style, not just className - the popup option list is
+          // browser-native chrome that mostly ignores Tailwind classes on
+          // <option>, but Chromium/Firefox do honor inline color/background
+          // set directly here, which is what keeps this text white-on-dark
+          // instead of falling back to the OS default (black-on-white).
+          <option
+            key={ws._id}
+            value={ws._id}
+            style={{ color: '#ffffff', background: 'var(--sidebar-card-bg)' }}
+          >
             {ws.name}
             {ws.role ? ` (${ws.role})` : ''}
           </option>

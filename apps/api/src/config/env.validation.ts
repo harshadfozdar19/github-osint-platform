@@ -218,6 +218,30 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   GITHUB_MAX_INLINE_WAIT_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_SEARCH_MIN_INTERVAL_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_CODE_SEARCH_MIN_INTERVAL_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  REFERENCE_INGEST_TIMEOUT_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  REFERENCE_INGEST_MAX_FILES?: string;
+
+  @IsOptional()
+  @IsString()
+  REFERENCE_INGEST_MAX_FILE_BYTES?: string;
+
+  @IsOptional()
+  @IsString()
+  REFERENCE_INGEST_MAX_PHRASES_PER_FILE?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

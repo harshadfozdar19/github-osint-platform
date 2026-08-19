@@ -6,6 +6,7 @@ import {
   GitHubPauseState,
   GitHubRateLimitSnapshot,
   GitHubResource,
+  PAUSABLE_RESOURCES,
   REDIS_KEYS,
   TokenScope,
   WorkspaceGitHubBudget,
@@ -176,9 +177,23 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
     this.snapshotFlushTimer.unref?.();
   }
 
-  async getPause(scope: TokenScope): Promise<GitHubPauseState> {
-    return this.cached(`pause:${scope}`, async () => {
-      const raw = await this.redis.hgetall(REDIS_KEYS.pause(scope));
+  /**
+   * Pause state is keyed per (scope, resource) - a code_search exhaustion
+   * must never block a core/search request on the same token, since each
+   * GitHub resource has its own independent quota. This used to be one
+   * pause record per scope covering every resource, which meant a code
+   * search 429 (10 req/min, exhausted almost instantly by the
+   * one-query-per-keyword discovery families) stalled repo-search queries
+   * and repository-analysis REST calls too, for as long as the code_search
+   * bucket took to reset - the dominant cause of scans stalling near
+   * completion on just a couple of straggler jobs.
+   */
+  async getPause(
+    scope: TokenScope,
+    resource: GitHubResource,
+  ): Promise<GitHubPauseState> {
+    return this.cached(`pause:${scope}:${resource}`, async () => {
+      const raw = await this.redis.hgetall(REDIS_KEYS.pause(scope, resource));
       if (!raw || !raw.pausedUntil) {
         return {
           paused: false,
@@ -189,7 +204,7 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
       }
       const pausedUntil = Number(raw.pausedUntil) || 0;
       if (pausedUntil <= Date.now()) {
-        await this.clearPause(scope);
+        await this.clearPause(scope, resource);
         return {
           paused: false,
           pausedUntil: null,
@@ -201,7 +216,7 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
         paused: true,
         pausedUntil,
         reason: raw.reason || 'GitHub rate limit',
-        resource: (raw.resource as GitHubResource) || null,
+        resource: (raw.resource as GitHubResource) || resource,
       };
     });
   }
@@ -212,17 +227,122 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
     reason: string,
     resource: GitHubResource,
   ): Promise<void> {
-    await this.redis.hset(REDIS_KEYS.pause(scope), {
+    const key = REDIS_KEYS.pause(scope, resource);
+    await this.redis.hset(key, {
       pausedUntil: String(pausedUntil),
       reason,
       resource,
     });
     const ttl = Math.max(1, Math.ceil((pausedUntil - Date.now()) / 1000) + 5);
-    await this.redis.expire(REDIS_KEYS.pause(scope), ttl);
+    await this.redis.expire(key, ttl);
   }
 
-  async clearPause(scope: TokenScope): Promise<void> {
-    await this.redis.del(REDIS_KEYS.pause(scope));
+  async clearPause(scope: TokenScope, resource: GitHubResource): Promise<void> {
+    await this.redis.del(REDIS_KEYS.pause(scope, resource));
+    // Otherwise a pause read that landed in the short in-memory cache just
+    // before this clear would keep answering "still paused" for up to
+    // shortCacheTtlMs after the Redis key is already gone.
+    this.shortCache.delete(`pause:${scope}:${resource}`);
+  }
+
+  /** Clears every resource's pause for this scope - see refreshRateLimitSnapshot's token-rotation comment for why this must be unconditional there. */
+  async clearAllPauses(scope: TokenScope): Promise<void> {
+    for (const resource of PAUSABLE_RESOURCES) {
+      await this.clearPause(scope, resource);
+    }
+  }
+
+  /**
+   * Status-display-only: "is anything paused for this scope, and until
+   * when" collapsed across every resource, since a dashboard/health check
+   * cares about the token as a whole, not one specific resource. Never used
+   * to gate an actual outbound request - enforcePauseAndQuota always checks
+   * the specific resource that request is for.
+   */
+  async getAnyPause(scope: TokenScope): Promise<GitHubPauseState> {
+    let latest: GitHubPauseState = {
+      paused: false,
+      pausedUntil: null,
+      reason: null,
+      resource: null,
+    };
+    for (const resource of PAUSABLE_RESOURCES) {
+      const pause = await this.getPause(scope, resource);
+      if (
+        pause.paused &&
+        pause.pausedUntil &&
+        (!latest.pausedUntil || pause.pausedUntil > latest.pausedUntil)
+      ) {
+        latest = pause;
+      }
+    }
+    return latest;
+  }
+
+  /**
+   * Reserves the next allowed request slot for (scope, resource), enforcing
+   * a minimum spacing between successive requests instead of the reactive
+   * "burst until near-exhausted, then pause for a full window reset"
+   * behavior of the pause/snapshot checks. Returns how many ms the caller
+   * must wait before it's actually this request's turn (0 if it can go
+   * immediately).
+   *
+   * Atomic via a Lua script - a plain GET-then-SET here would let several
+   * concurrent callers for the same resource (e.g. two keyword-scoped
+   * scans for the same brand, both hitting code search at once) each read
+   * the same stale "last request" timestamp and both conclude they're
+   * clear to go right now, defeating the whole point of pacing. The script
+   * reads the last reserved slot, bumps it forward by minIntervalMs (or to
+   * now, whichever is later), and returns the wait - so concurrent callers
+   * queue up single-file automatically rather than racing.
+   *
+   * Only actually CLAIMS (persists) that slot when the wait is within
+   * maxInlineWaitMs - i.e. when the caller can actually honor it by
+   * sleeping right now. A caller facing a longer wait doesn't sleep; it
+   * throws and gets rescheduled via BullMQ instead (see
+   * GitHubHttpClient.paceRequest/delayJobForGitHubQuota), WITHOUT ever
+   * making the real GitHub request that slot was for. Regression: this
+   * used to claim the slot unconditionally on every call, so every
+   * rescheduled-and-abandoned attempt still permanently pushed the shared
+   * "last reserved" pointer forward - under any burst of concurrent
+   * callers (several keyword scans, or one query's recursive
+   * language/date-split children, all sharing one resource's pacing key),
+   * the backlog of claimed-but-never-fulfilled slots could grow faster
+   * than real requests drained it, so the reported wait never converged
+   * toward zero even minutes later. Leaving the pointer untouched when a
+   * caller can't use its slot means the next attempt (a retry of this same
+   * job, or any other caller) recomputes from the same real baseline
+   * instead of an ever-inflating one.
+   */
+  async reserveNextSlot(
+    scope: TokenScope,
+    resource: GitHubResource,
+    minIntervalMs: number,
+    maxInlineWaitMs: number,
+  ): Promise<number> {
+    const key = REDIS_KEYS.pace(scope, resource);
+    const script = `
+      local last = tonumber(redis.call('GET', KEYS[1]) or '0')
+      local now = tonumber(ARGV[1])
+      local minInterval = tonumber(ARGV[2])
+      local maxInlineWait = tonumber(ARGV[3])
+      local nextSlot = last + minInterval
+      local slot = nextSlot > now and nextSlot or now
+      local wait = slot - now
+      if wait <= maxInlineWait then
+        redis.call('SET', KEYS[1], slot, 'PX', minInterval * 4)
+      end
+      return wait
+    `;
+    const waitMs = await this.redis.eval(
+      script,
+      1,
+      key,
+      String(Date.now()),
+      String(minIntervalMs),
+      String(maxInlineWaitMs),
+    );
+    return Math.max(0, Number(waitMs));
   }
 
   async getSecondaryRetryAfterUntil(scope: TokenScope): Promise<number | null> {
@@ -244,6 +364,12 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
   ): Promise<void> {
     const ttl = Math.max(1, Math.ceil((until - Date.now()) / 1000) + 5);
     await this.redis.set(REDIS_KEYS.secondary(scope), String(until), 'EX', ttl);
+  }
+
+  /** See clearPause - same "don't let a token rotation inherit the old token's backoff" reasoning, for the secondary/abuse-detection cooldown. */
+  async clearSecondary(scope: TokenScope): Promise<void> {
+    await this.redis.del(REDIS_KEYS.secondary(scope));
+    this.shortCache.delete(`secondary:${scope}`);
   }
 
   async incrementBudget(workspaceId: string): Promise<number> {
@@ -323,6 +449,14 @@ export class GitHubRateLimitStore implements OnModuleDestroy {
 
   async clearScanPaused(scanJobId: string): Promise<void> {
     await this.redis.hdel(REDIS_KEYS.pausedScans, scanJobId);
+  }
+
+  /** Live pause state for one scan job - null once resumed/cleared or expired. */
+  async getScanPausedUntil(scanJobId: string): Promise<number | null> {
+    const raw = await this.redis.hget(REDIS_KEYS.pausedScans, scanJobId);
+    const until = Number(raw) || 0;
+    if (until <= Date.now()) return null;
+    return until;
   }
 
   async countPausedScans(): Promise<number> {

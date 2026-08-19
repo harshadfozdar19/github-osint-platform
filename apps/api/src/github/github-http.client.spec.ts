@@ -34,11 +34,14 @@ function buildClient(storeOverrides: Partial<GitHubRateLimitStore> = {}) {
       resource: null,
     }),
     getSecondaryRetryAfterUntil: jest.fn().mockResolvedValue(null),
+    reserveNextSlot: jest.fn().mockResolvedValue(0),
     getSnapshot: jest.fn().mockResolvedValue(null),
     saveSnapshot: jest.fn().mockResolvedValue(undefined),
     setPause: jest.fn().mockResolvedValue(undefined),
     clearPause: jest.fn().mockResolvedValue(undefined),
+    clearAllPauses: jest.fn().mockResolvedValue(undefined),
     setSecondaryRetryAfterUntil: jest.fn().mockResolvedValue(undefined),
+    clearSecondary: jest.fn().mockResolvedValue(undefined),
     getBudgetUsed: jest.fn().mockResolvedValue(0),
     incrementBudget: jest.fn().mockResolvedValue(1),
     acquireConcurrency: jest.fn().mockResolvedValue(true),
@@ -167,6 +170,79 @@ describe('GitHubHttpClient rate-limit management', () => {
       }),
     ).rejects.toMatchObject({ code: 'SECONDARY_RATE_LIMIT' });
     expect(store.setSecondaryRetryAfterUntil).toHaveBeenCalled();
+  });
+
+  it("attributes a primary-rate-limit 403 to the resource that was actually exhausted, not always 'core' (regression: a code_search 403 wrongly paused unrelated core requests, whose own quota was untouched)", async () => {
+    // GitHub signals primary rate-limit exhaustion for search/code_search via
+    // a 403 (not 429) with x-ratelimit-remaining: 0 - not the "secondary rate
+    // limit / abuse detection" case, which is the only other 403 branch.
+    const { client, store, workspaces } = buildClient();
+    (workspaces.resolveGithubToken as jest.Mock).mockResolvedValue(
+      'ghp_workspace_specific_token_00000000000001',
+    );
+    mockRequest.mockResolvedValue({
+      status: 403,
+      data: { message: 'API rate limit exceeded for user ID.' },
+      headers: headers({
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-resource': 'code_search',
+      }),
+    });
+
+    await expect(
+      client.request('GET', '/search/code', {
+        ctx: { workspaceId: 'ws1' },
+        resourceHint: 'code_search',
+      }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMIT' });
+
+    expect(store.setPause).toHaveBeenCalledWith(
+      'workspace:ws1',
+      expect.any(Number),
+      'RATE_LIMIT',
+      'code_search',
+    );
+  });
+
+  it('refreshRateLimitSnapshot clears any stale pause/secondary state before re-syncing (regression: token rotation inheriting the old token\'s pause)', async () => {
+    // scope is keyed by workspace id, not by token value, so swapping in a
+    // brand-new token doesn't change the scope key - without clearing here,
+    // a workspace whose old token got paused for exhaustion would still see
+    // every request blocked by that same stale pause right after saving a
+    // fresh token that has never made a request yet.
+    const { client, store, workspaces } = buildClient();
+    (workspaces.resolveGithubToken as jest.Mock).mockResolvedValue(
+      'ghp_brand_new_token_not_a_real_secret',
+    );
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: {
+        resources: {
+          core: { limit: 5000, remaining: 4999, used: 1, reset: 1999999999 },
+          search: { limit: 30, remaining: 29, used: 1, reset: 1999999999 },
+        },
+      },
+      headers: headers(),
+    });
+
+    await client.refreshRateLimitSnapshot({ workspaceId: 'ws1' });
+
+    expect(store.clearAllPauses).toHaveBeenCalledWith('workspace:ws1');
+    expect(store.clearSecondary).toHaveBeenCalledWith('workspace:ws1');
+    // Clearing must happen before the /rate_limit call, not after - a still
+    //-active stale pause would otherwise block this very request too.
+    const clearOrder = (store.clearAllPauses as jest.Mock).mock
+      .invocationCallOrder[0];
+    const requestOrder = mockRequest.mock.invocationCallOrder[0];
+    expect(clearOrder).toBeLessThan(requestOrder);
+    expect(store.saveSnapshot).toHaveBeenCalledWith(
+      'workspace:ws1',
+      expect.objectContaining({ resource: 'core', remaining: 4999 }),
+    );
+    expect(store.saveSnapshot).toHaveBeenCalledWith(
+      'workspace:ws1',
+      expect.objectContaining({ resource: 'search', remaining: 29 }),
+    );
   });
 
   it('throws RATE_LIMIT on exhausted primary quota (429)', async () => {
@@ -314,7 +390,7 @@ describe('GitHubHttpClient rate-limit management', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(store.getPause).toHaveBeenCalledWith('workspace:ws1');
+    expect(store.getPause).toHaveBeenCalledWith('workspace:ws1', 'core');
   });
 
   it('rejects when concurrency slots are unavailable (fairness)', async () => {
@@ -451,6 +527,70 @@ describe('GitHubHttpClient rate-limit management', () => {
   });
 });
 
+describe('GitHubHttpClient request pacing', () => {
+  beforeEach(() => {
+    mockRequest.mockReset();
+  });
+
+  it('reserves a slot for a search request and sleeps inline for a short wait', async () => {
+    const { client, store } = buildClient({
+      reserveNextSlot: jest.fn().mockResolvedValue(5),
+    });
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: { total_count: 0, items: [] },
+      headers: headers(),
+    });
+
+    const res = await client.request('GET', '/search/repositories', {
+      ctx: { workspaceId: 'ws1' },
+      resourceHint: 'search',
+    });
+
+    expect(res.status).toBe(200);
+    // buildClient's workspaces mock has no per-workspace token configured,
+    // so this resolves to the shared token's scope.
+    expect(store.reserveNextSlot).toHaveBeenCalledWith(
+      'shared',
+      'search',
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it('reschedules instead of blocking when the paced wait is longer than the inline cap (GITHUB_MAX_INLINE_WAIT_MS)', async () => {
+    const { client } = buildClient({
+      // buildClient's shared config sets GITHUB_MAX_INLINE_WAIT_MS to 50ms.
+      reserveNextSlot: jest.fn().mockResolvedValue(999_999),
+    });
+
+    await expect(
+      client.request('GET', '/search/code', {
+        ctx: { workspaceId: 'ws1', scanJobId: 'scan1' },
+        resourceHint: 'code_search',
+      }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMIT' });
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not pace core (non-search) requests', async () => {
+    const { client, store } = buildClient({
+      reserveNextSlot: jest.fn().mockResolvedValue(0),
+    });
+    mockRequest.mockResolvedValue({
+      status: 200,
+      data: { ok: true },
+      headers: headers(),
+    });
+
+    await client.request('GET', '/repos/a/b', {
+      ctx: { workspaceId: 'ws1' },
+    });
+
+    expect(store.reserveNextSlot).not.toHaveBeenCalled();
+  });
+});
+
 describe('GitHubHttpClient search result caching', () => {
   beforeEach(() => {
     mockRequest.mockReset();
@@ -536,6 +676,7 @@ describe('GitHubHttpClient search result caching', () => {
         resource: null,
       }),
       getSecondaryRetryAfterUntil: jest.fn().mockResolvedValue(null),
+      reserveNextSlot: jest.fn().mockResolvedValue(0),
       getSnapshot: jest.fn().mockResolvedValue(null),
       saveSnapshot: jest.fn().mockResolvedValue(undefined),
       getBudgetUsed: jest.fn().mockResolvedValue(0),

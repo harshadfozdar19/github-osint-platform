@@ -1,10 +1,25 @@
 export type GitHubResource =
   | 'core'
   | 'search'
+  | 'code_search'
   | 'graphql'
   | 'integration_manifest'
   | 'code_scanning_upload'
   | 'secondary';
+
+/**
+ * Every resource bucket a pause can be recorded against - used to sweep
+ * "clear every pause for this scope" (new token) and "is anything paused at
+ * all" (status dashboard) without needing a per-call resource. Deliberately
+ * excludes 'secondary', which has its own separate abuse-detection cooldown
+ * (getSecondaryRetryAfterUntil), not a per-resource quota pause.
+ */
+export const PAUSABLE_RESOURCES: GitHubResource[] = [
+  'core',
+  'search',
+  'code_search',
+  'graphql',
+];
 
 export interface GitHubRateLimitSnapshot {
   resource: GitHubResource;
@@ -77,7 +92,10 @@ export type TokenScope = 'shared' | `workspace:${string}`;
 export const REDIS_KEYS = {
   rateLimit: (scope: TokenScope, resource: string) =>
     `github:ratelimit:${scope}:${resource}`,
-  pause: (scope: TokenScope) => `github:ratelimit:pause:${scope}`,
+  pause: (scope: TokenScope, resource: string) =>
+    `github:ratelimit:pause:${scope}:${resource}`,
+  pace: (scope: TokenScope, resource: string) =>
+    `github:ratelimit:pace:${scope}:${resource}`,
   secondary: (scope: TokenScope) => `github:ratelimit:secondary:${scope}`,
   budget: (workspaceId: string, day: string) =>
     `github:budget:${workspaceId}:${day}`,

@@ -20,6 +20,17 @@ export class MonitoredBrand {
   @Prop({ type: [String], default: [] })
   keywords!: string[];
 
+  /**
+   * This brand's own real GitHub org/user accounts (if known) - lets
+   * discovery search `org:<owner>`/`user:<owner>` unconditionally instead of
+   * relying on the brand name happening to co-occur with a keyword or
+   * secret pattern. Also used to attribute a match to this brand even when
+   * the repo's own name/description never mentions the brand at all (an
+   * internal tool repo, say) - see matchBrand().
+   */
+  @Prop({ type: [String], default: [] })
+  trustedGithubOwners!: string[];
+
   @Prop({ default: true, index: true })
   enabled!: boolean;
 }

@@ -1,10 +1,21 @@
-'use client';
+﻿'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
-import { EmptyState, LoadingBlock } from '@/components/ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  ErrorState,
+  Field,
+  Input,
+  Select,
+  TableSkeleton,
+} from '@/components/ui';
 import { api, GitHubSearchResult, Keyword } from '@/lib/api';
+import clsx from 'clsx';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -17,6 +28,10 @@ export default function SearchPage() {
   const [results, setResults] = useState<GitHubSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Separate from `error` (result of running a search) - covers the
+  // keyword list fetched once on mount, so a failure there is visible
+  // instead of looking identical to "you have no keywords configured".
+  const [loadError, setLoadError] = useState('');
 
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
@@ -26,7 +41,7 @@ export default function SearchPage() {
   useEffect(() => {
     api<Keyword[]>('/keywords')
       .then((res) => setKeywords(res.filter((k) => k.enabled)))
-      .catch(() => setKeywords([]));
+      .catch(() => setLoadError('Failed to load your keywords - the picker below may be empty.'));
   }, []);
 
   function toggleKeyword(kw: string) {
@@ -79,71 +94,43 @@ export default function SearchPage() {
         title="Custom GitHub search"
         subtitle="Run ad-hoc repository or code searches through the managed GitHub client."
       >
-        <form
-          onSubmit={onSubmit}
-          className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-4"
-        >
-          <label className="flex-1 min-w-[240px] text-sm">
-            <span className="mb-1 block text-[var(--muted)]">Query</span>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-              placeholder='e.g. phonepe apk in:name OR filename:.env AKIA'
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-[var(--muted)]">Type</span>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as 'repositories' | 'code')}
-              className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-            >
-              <option value="repositories">Repositories</option>
-              <option value="code">Code</option>
-            </select>
-          </label>
-          {type === 'repositories' ? (
-            <>
-              <label className="text-sm">
-                <span className="mb-1 block text-[var(--muted)]">Created from</span>
-                <input
-                  type="date"
-                  value={createdFrom}
-                  onChange={(e) => setCreatedFrom(e.target.value)}
-                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-                />
-              </label>
-              <label className="text-sm">
-                <span className="mb-1 block text-[var(--muted)]">Created to</span>
-                <input
-                  type="date"
-                  value={createdTo}
-                  onChange={(e) => setCreatedTo(e.target.value)}
-                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-                />
-              </label>
-            </>
-          ) : null}
-          <label className="flex items-center gap-2 text-sm pb-2">
-            <input
-              type="checkbox"
-              checked={includeSeen}
-              onChange={(e) => setIncludeSeen(e.target.checked)}
-            />
-            Include already-reviewed repos
-          </label>
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-md bg-[var(--accent-dim)] px-4 py-2 text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
-          >
-            {loading ? 'Searching…' : 'Search'}
-          </button>
-        </form>
+        <Card className="mb-6 p-4">
+          <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
+            <Field label="Query" className="min-w-[240px] flex-1">
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder='e.g. phonepe apk in:name OR filename:.env AKIA'
+              />
+            </Field>
+            <Field label="Type">
+              <Select value={type} onChange={(e) => setType(e.target.value as 'repositories' | 'code')}>
+                <option value="repositories">Repositories</option>
+                <option value="code">Code</option>
+              </Select>
+            </Field>
+            {type === 'repositories' ? (
+              <>
+                <Field label="Created from">
+                  <Input type="date" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} />
+                </Field>
+                <Field label="Created to">
+                  <Input type="date" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} />
+                </Field>
+              </>
+            ) : null}
+            <label className="flex items-center gap-2 pb-2.5 text-sm">
+              <Checkbox checked={includeSeen} onChange={(e) => setIncludeSeen(e.target.checked)} />
+              Include already-reviewed repos
+            </label>
+            <Button type="submit" loading={loading}>
+              {loading ? 'Searching…' : 'Search'}
+            </Button>
+          </form>
+        </Card>
 
         {keywords.length > 0 ? (
-          <div className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-4">
+          <Card className="mb-6 p-4">
             <p className="mb-3 text-sm text-[var(--muted)]">
               Or build a query from your keywords — pick one or more, then
               apply them into the query field above.
@@ -156,11 +143,12 @@ export default function SearchPage() {
                     key={kw._id}
                     type="button"
                     onClick={() => toggleKeyword(kw.keyword)}
-                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    className={clsx(
+                      'rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150',
                       active
-                        ? 'border-[var(--accent)] bg-[var(--accent-dim)] text-white'
-                        : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--bg)]'
-                    }`}
+                        ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                        : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--bg-subtle)]',
+                    )}
                     title={kw.category}
                   >
                     {kw.keyword}
@@ -169,14 +157,14 @@ export default function SearchPage() {
               })}
             </div>
             <div className="mt-3 flex items-center gap-3">
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={applyKeywordsToQuery}
                 disabled={selectedKeywords.length === 0}
-                className="rounded-md bg-[var(--accent-dim)] px-3 py-1.5 text-sm text-white hover:bg-[var(--accent-hover)] disabled:opacity-50"
               >
                 Apply {selectedKeywords.length > 0 ? `(${selectedKeywords.length})` : ''} to query
-              </button>
+              </Button>
               {selectedKeywords.length > 0 ? (
                 <button
                   type="button"
@@ -187,11 +175,12 @@ export default function SearchPage() {
                 </button>
               ) : null}
             </div>
-          </div>
+          </Card>
         ) : null}
 
-        {error ? <p className="mb-4 text-[var(--danger)]">{error}</p> : null}
-        {loading ? <LoadingBlock label="Querying GitHub…" /> : null}
+        {error ? <ErrorState message={error} /> : null}
+        {loadError ? <ErrorState message={loadError} /> : null}
+        {loading ? <TableSkeleton rows={4} cols={3} /> : null}
 
         {!loading && results && results.items.length === 0 ? (
           <EmptyState
@@ -221,9 +210,11 @@ export default function SearchPage() {
                   `${item.path || item.name || 'Result'}`;
                 const url = item.html_url || item.repository?.html_url || '#';
                 return (
-                  <li
+                  <Card
                     key={`${item.id}-${item.path || item.full_name}`}
-                    className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-4"
+                    as="li"
+                    hoverable
+                    className="p-4"
                   >
                     <a
                       href={url}
@@ -243,28 +234,30 @@ export default function SearchPage() {
                       {item.language ? `${item.language} · ` : ''}
                       {item.stargazers_count != null ? `${item.stargazers_count} stars` : ''}
                     </p>
-                  </li>
+                  </Card>
                 );
               })}
             </ul>
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 disabled={page <= 1 || loading}
                 onClick={() => runSearch(page - 1)}
-                className="rounded-md border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50"
               >
                 Previous
-              </button>
+              </Button>
               <span className="text-sm text-[var(--muted)]">Page {page}</span>
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 disabled={loading || results.items.length < 10}
                 onClick={() => runSearch(page + 1)}
-                className="rounded-md border border-[var(--border)] px-3 py-2 text-sm disabled:opacity-50"
               >
                 Next
-              </button>
+              </Button>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -276,21 +269,17 @@ export default function SearchPage() {
                 <label htmlFor="search-page-jump" className="text-sm text-[var(--muted)]">
                   Go to page
                 </label>
-                <input
+                <Input
                   id="search-page-jump"
                   type="number"
                   min={1}
                   value={jumpPage}
                   onChange={(e) => setJumpPage(e.target.value)}
-                  className="w-16 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm"
+                  className="w-16 py-1.5"
                 />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="rounded-md border border-[var(--border)] px-3 py-1 text-sm hover:bg-[var(--bg-elevated)] disabled:opacity-50"
-                >
+                <Button type="submit" variant="outline" size="sm" disabled={loading}>
                   Go
-                </button>
+                </Button>
               </form>
             </div>
           </>

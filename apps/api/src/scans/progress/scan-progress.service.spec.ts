@@ -214,6 +214,28 @@ describe('ScanProgressService', () => {
     await service.onModuleDestroy();
   });
 
+  it("never lets a straggling worker's stale status:RUNNING override an already-terminal scan (e.g. the sequential scheduler cancelling a keyword whose in-flight search job hasn't noticed yet)", async () => {
+    const { service, scanModel } = buildService();
+    scanModel.findById = jest.fn().mockReturnValue({
+      exec: () =>
+        Promise.resolve({
+          _id: scanJobId,
+          workspaceId,
+          status: ScanJobStatus.CANCELLED,
+          message: 'Scan cancelled',
+          awaitingSearch: 0,
+        }),
+    });
+    const event = await service.emitFromScanId(scanJobId, {
+      type: ScanProgressEventType.SEARCH_PROGRESS,
+      phase: ScanProgressPhase.SEARCHING,
+      status: ScanJobStatus.RUNNING,
+      message: 'Search query completed',
+    });
+    expect(event?.status).toBe(ScanJobStatus.CANCELLED);
+    await service.onModuleDestroy();
+  });
+
   it('rejects cross-workspace progress reads (tenant isolation)', async () => {
     const { service, scanModel } = buildService();
     scanModel.findOne = jest.fn().mockReturnValue({

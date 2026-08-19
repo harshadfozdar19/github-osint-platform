@@ -31,11 +31,22 @@ import { paginate } from '../common/dto/pagination.dto';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { CurrentTenant } from '../tenancy/tenancy.decorators';
 import type { TenantContext } from '../tenancy/tenancy.decorators';
-import { WORKSPACE_HEADER } from '../common/enums';
+import { ScanJobStatus, WORKSPACE_HEADER } from '../common/enums';
 import { ScanProgressService } from './progress/scan-progress.service';
 import { ManualScanDto } from './dto/manual-scan.dto';
+import { AnalyzeBranchDto } from './dto/analyze-branch.dto';
+import {
+  AddKeywordRotationSlotsDto,
+  KeywordRotationSlotRefDto,
+  SetKeywordRotationSlotContinueDiscoveryDto,
+  SetKeywordRotationSlotSearchScopeDto,
+  StartKeywordRotationDto,
+} from './dto/keyword-rotation.dto';
 import { GitHubService } from '../github/github.service';
-import { buildCreatedQualifier } from './discovery/query-families';
+import {
+  buildCreatedQualifier,
+  buildPushedQualifier,
+} from './discovery/query-families';
 import { SeenRepositoriesService } from './seen-repositories.service';
 
 @ApiTags('scans')
@@ -54,14 +65,29 @@ export class ScansController {
 
   @Get()
   @ApiOperation({ summary: 'List scan job history for the workspace' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description:
+      'Comma-separated ScanJobStatus values to restrict to (e.g. "queued,running" for only active scans) - omit for full history',
+  })
   async list(
     @CurrentTenant() tenant: TenantContext,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
+    @Query('status') status?: string,
   ) {
     const p = Math.max(1, Number(page) || 1);
     const l = Math.min(100, Math.max(1, Number(limit) || 20));
-    const result = await this.scansService.list(tenant.workspaceId, p, l);
+    const statusFilter = status
+      ?.split(',')
+      .map((s) => s.trim())
+      .filter((s): s is ScanJobStatus =>
+        Object.values(ScanJobStatus).includes(s as ScanJobStatus),
+      );
+    const result = await this.scansService.list(tenant.workspaceId, p, l, {
+      status: statusFilter,
+    });
     return paginate(result.data, result.total, p, l);
   }
 
@@ -83,10 +109,423 @@ export class ScansController {
       brandId: body.brandId,
       customQuery: body.customQuery,
       searchKind: body.searchKind,
+      internalAudit: body.internalAudit,
+      keyword: body.keyword,
+      customRepoQuery: body.customRepoQuery,
+      customCodeQuery: body.customCodeQuery,
       maxRepos: body.maxRepos,
       createdFrom: body.createdFrom,
       createdTo: body.createdTo,
+      pushedFrom: body.pushedFrom,
+      pushedTo: body.pushedTo,
+      dateFilterMode: body.dateFilterMode,
+      continueDiscovery: body.continueDiscovery,
+      discoveryOnly: body.discoveryOnly,
     });
+  }
+
+  @Get('repositories')
+  @ApiOperation({
+    summary:
+      'List discovered repositories for the workspace (found by any scan, analyzed or still pending) - the browsable counterpart to pending-analysis-count',
+  })
+  @ApiQuery({ name: 'page', required: false, example: '1' })
+  @ApiQuery({ name: 'limit', required: false, example: '20' })
+  @ApiQuery({
+    name: 'pendingAnalysis',
+    required: false,
+    description:
+      'true = only repos not yet content-analyzed, false = only analyzed ones',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Case-insensitive substring match on owner/repo full name',
+  })
+  @ApiQuery({
+    name: 'brandId',
+    required: false,
+    description:
+      'Only repos whose discovering scan was scoped to this exact company',
+  })
+  @ApiQuery({
+    name: 'keyword',
+    required: false,
+    description:
+      "Only repos whose discovering scan was scoped to this exact keyword - requires brandId alongside it (a keyword alone isn't unique across companies)",
+  })
+  @ApiQuery({
+    name: 'language',
+    required: false,
+    description:
+      "Exact (case-insensitive) match on GitHub's reported primary language",
+  })
+  @ApiQuery({
+    name: 'matchLocation',
+    required: false,
+    description:
+      'Where the brand match was found (repo_name, description, topics, file_content, readme, ...)',
+  })
+  @ApiQuery({
+    name: 'discoveredFrom',
+    required: false,
+    description:
+      'Repository.createdAt (when WE first recorded it) on/after this date',
+  })
+  @ApiQuery({ name: 'discoveredTo', required: false })
+  @ApiQuery({
+    name: 'githubCreatedFrom',
+    required: false,
+    description: 'GitHub-reported repo creation date on/after this date',
+  })
+  @ApiQuery({ name: 'githubCreatedTo', required: false })
+  @ApiQuery({
+    name: 'pushedFrom',
+    required: false,
+    description: 'Last GitHub push on/after this date',
+  })
+  @ApiQuery({ name: 'pushedTo', required: false })
+  @ApiQuery({
+    name: 'lastScannedFrom',
+    required: false,
+    description: 'Our own last analysis pass on/after this date',
+  })
+  @ApiQuery({ name: 'lastScannedTo', required: false })
+  async listRepositories(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @Query('pendingAnalysis') pendingAnalysis?: string,
+    @Query('search') search?: string,
+    @Query('brandId') brandId?: string,
+    @Query('keyword') keyword?: string,
+    @Query('language') language?: string,
+    @Query('matchLocation') matchLocation?: string,
+    @Query('discoveredFrom') discoveredFrom?: string,
+    @Query('discoveredTo') discoveredTo?: string,
+    @Query('githubCreatedFrom') githubCreatedFrom?: string,
+    @Query('githubCreatedTo') githubCreatedTo?: string,
+    @Query('pushedFrom') pushedFrom?: string,
+    @Query('pushedTo') pushedTo?: string,
+    @Query('lastScannedFrom') lastScannedFrom?: string,
+    @Query('lastScannedTo') lastScannedTo?: string,
+  ) {
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.min(100, Math.max(1, Number(limit) || 20));
+    const result = await this.scansService.listRepositories(
+      tenant.workspaceId,
+      p,
+      l,
+      {
+        pendingAnalysis:
+          pendingAnalysis === 'true'
+            ? true
+            : pendingAnalysis === 'false'
+              ? false
+              : undefined,
+        search,
+        brandId,
+        keyword,
+        language,
+        matchLocation,
+        discoveredFrom: discoveredFrom ? new Date(discoveredFrom) : undefined,
+        discoveredTo: discoveredTo ? new Date(discoveredTo) : undefined,
+        githubCreatedFrom: githubCreatedFrom
+          ? new Date(githubCreatedFrom)
+          : undefined,
+        githubCreatedTo: githubCreatedTo
+          ? new Date(githubCreatedTo)
+          : undefined,
+        pushedFrom: pushedFrom ? new Date(pushedFrom) : undefined,
+        pushedTo: pushedTo ? new Date(pushedTo) : undefined,
+        lastScannedFrom: lastScannedFrom
+          ? new Date(lastScannedFrom)
+          : undefined,
+        lastScannedTo: lastScannedTo ? new Date(lastScannedTo) : undefined,
+      },
+    );
+    return paginate(result.data, result.total, p, l);
+  }
+
+  @Get('repositories/languages')
+  @ApiOperation({
+    summary:
+      "Distinct GitHub languages seen among this workspace's discovered repos - powers the Repositories page's Language filter dropdown",
+  })
+  async listRepositoryLanguages(@CurrentTenant() tenant: TenantContext) {
+    return this.scansService.listDistinctRepositoryLanguages(
+      tenant.workspaceId,
+    );
+  }
+
+  @Get('repositories/recent-changes')
+  @ApiOperation({
+    summary:
+      'Two views of "this repo recently changed": repos pushed to on GitHub recently, and repos where a rescan just turned up a new or reopened finding - powers the Repositories page\'s Recent changes section',
+  })
+  @ApiQuery({ name: 'days', required: false, example: '7' })
+  @ApiQuery({ name: 'limit', required: false, example: '8' })
+  async getRecentChanges(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('days') days?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.scansService.getRecentChanges(tenant.workspaceId, {
+      days: days ? Number(days) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get('repositories/:id/branches')
+  @ApiOperation({
+    summary:
+      "Every branch this repository actually has on GitHub, not just its default one - GitHub's search index only ever covers the default branch, so this is the only way to even discover a side branch exists. Flags which one is the default.",
+  })
+  async listRepositoryBranches(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id') id: string,
+  ) {
+    return this.scansService.listRepositoryBranches(tenant.workspaceId, id);
+  }
+
+  @Post('repositories/:id/branches/analyze')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary:
+      'Starts an on-demand clone+scan of one specific branch of one already-known repository (ScanMode.BRANCH_ANALYSIS) - for checking a side branch a search hit never surfaced. Returns the created scan job immediately; poll it the same way as any other scan.',
+  })
+  async analyzeRepositoryBranch(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AnalyzeBranchDto,
+  ) {
+    return this.scansService.startBranchAnalysis(
+      tenant.workspaceId,
+      user.id,
+      id,
+      dto.branch,
+    );
+  }
+
+  @Get('pending-analysis-count')
+  @ApiOperation({
+    summary:
+      'Count of repos discovered (by a discoveryOnly scan) but not yet analyzed - for the "Analyze discovered repositories" action. Optionally narrowed to one brand and/or a discovered-date window, matching whatever scope the actual analyze_pending run would use, so the button always shows an accurate count for what it\'s about to do.',
+  })
+  @ApiQuery({ name: 'brandId', required: false })
+  @ApiQuery({ name: 'discoveredFrom', required: false })
+  @ApiQuery({ name: 'discoveredTo', required: false })
+  async pendingAnalysisCount(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('brandId') brandId?: string,
+    @Query('discoveredFrom') discoveredFrom?: string,
+    @Query('discoveredTo') discoveredTo?: string,
+  ) {
+    const count = await this.scansService.countPendingAnalysis(
+      tenant.workspaceId,
+      {
+        brandId,
+        discoveredFrom: discoveredFrom ? new Date(discoveredFrom) : undefined,
+        discoveredTo: discoveredTo ? new Date(discoveredTo) : undefined,
+      },
+    );
+    return { count };
+  }
+
+  @Get('keyword-query-preview')
+  @ApiOperation({
+    summary:
+      "The actual repo-search + code-search query strings buildQueryFamilies would run right now for each of a brand's own keywords - what the per-keyword discovery toggle shows/lets you edit before starting.",
+  })
+  @ApiQuery({ name: 'brandId', required: true })
+  @ApiQuery({
+    name: 'keyword',
+    required: false,
+    description:
+      "Recompute just this one keyword's preview (e.g. after its own independent date range changed) instead of every keyword the brand has.",
+  })
+  @ApiQuery({ name: 'createdFrom', required: false })
+  @ApiQuery({ name: 'createdTo', required: false })
+  @ApiQuery({ name: 'pushedFrom', required: false })
+  @ApiQuery({ name: 'pushedTo', required: false })
+  async keywordQueryPreview(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('brandId') brandId: string,
+    @Query('keyword') keyword?: string,
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
+    @Query('pushedFrom') pushedFrom?: string,
+    @Query('pushedTo') pushedTo?: string,
+  ) {
+    return this.scansService.previewKeywordQueries(
+      tenant.workspaceId,
+      brandId,
+      {
+        createdFrom,
+        createdTo,
+        pushedFrom,
+        pushedTo,
+        dateFilterMode:
+          createdFrom || createdTo || pushedFrom || pushedTo ? 'or' : 'and',
+      },
+      { keyword },
+    );
+  }
+
+  @Post('keyword-rotation/start')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Start (or restart with a new queue) the workspace's sequential keyword scheduler: runs exactly one keyword's discovery scan at a time, each getting the workspace's whole GitHub token budget for its own duration before handing off to the next keyword in the queue - can mix keywords from several companies. The alternative to the per-keyword watch toggle running every keyword concurrently and splitting that same budget N ways.",
+  })
+  startKeywordRotation(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: AuthUser,
+    @Body() body: StartKeywordRotationDto,
+  ) {
+    return this.scansService.startKeywordRotation(tenant.workspaceId, user.id, {
+      slots: body.slots,
+      dateFilterMode: body.dateFilterMode,
+      createdFrom: body.createdFrom,
+      createdTo: body.createdTo,
+      pushedFrom: body.pushedFrom,
+      pushedTo: body.pushedTo,
+    });
+  }
+
+  @Post('keyword-rotation/stop')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Stop the workspace's sequential keyword scheduler",
+  })
+  stopKeywordRotation(@CurrentTenant() tenant: TenantContext) {
+    return this.scansService.stopKeywordRotation(tenant.workspaceId);
+  }
+
+  @Post('keyword-rotation/add')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Add one or more keywords to the END of an already-running scheduler queue, without touching whichever keyword currently holds the turn or anything else already queued - they'll come up in their turn once the cycle reaches them. Requires the scheduler to already be running (use Start otherwise).",
+  })
+  addKeywordRotationSlots(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: AddKeywordRotationSlotsDto,
+  ) {
+    return this.scansService.addKeywordRotationSlots(
+      tenant.workspaceId,
+      body.slots,
+    );
+  }
+
+  @Post('keyword-rotation/pause')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Pause ONE queued keyword without touching the rest of the scheduler - if it's the one currently holding the turn, hands off immediately to the next non-paused keyword instead of waiting out its remaining duration.",
+  })
+  pauseKeywordRotationSlot(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: KeywordRotationSlotRefDto,
+  ) {
+    return this.scansService.pauseKeywordRotationSlot(
+      tenant.workspaceId,
+      body.brandId,
+      body.keyword,
+    );
+  }
+
+  @Post('keyword-rotation/resume')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Resume ONE previously paused keyword - rejoins the cycle on its next turn, or immediately restarts the scheduler from this keyword if the whole thing had stopped.',
+  })
+  resumeKeywordRotationSlot(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: KeywordRotationSlotRefDto,
+  ) {
+    return this.scansService.resumeKeywordRotationSlot(
+      tenant.workspaceId,
+      body.brandId,
+      body.keyword,
+    );
+  }
+
+  @Post('keyword-rotation/search-scope')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Change which GitHub search kind(s) ONE queued keyword runs - repository search only, code search only, or both (default). If it's the keyword currently holding the turn, its scan restarts immediately with the new choice instead of waiting for its next turn.",
+  })
+  setKeywordRotationSlotSearchScope(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: SetKeywordRotationSlotSearchScopeDto,
+  ) {
+    return this.scansService.setKeywordRotationSlotSearchScope(
+      tenant.workspaceId,
+      body.brandId,
+      body.keyword,
+      body.searchScope,
+    );
+  }
+
+  @Post('keyword-rotation/continue-discovery')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Change whether ONE queued keyword resumes its queries from its own discovery cursor (true, default) or restarts every query at page 1 on every turn (false). If it's the keyword currently holding the turn, its scan restarts immediately with the new choice instead of waiting for its next turn.",
+  })
+  setKeywordRotationSlotContinueDiscovery(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: SetKeywordRotationSlotContinueDiscoveryDto,
+  ) {
+    return this.scansService.setKeywordRotationSlotContinueDiscovery(
+      tenant.workspaceId,
+      body.brandId,
+      body.keyword,
+      body.continueDiscovery,
+    );
+  }
+
+  @Post('keyword-rotation/remove')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Permanently remove ONE keyword from the queue, from any state - if it's the one currently holding the turn, cancels its scan (repos already discovered stay recorded) and hands off immediately to the next non-paused keyword.",
+  })
+  removeKeywordRotationSlot(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: KeywordRotationSlotRefDto,
+  ) {
+    return this.scansService.removeKeywordRotationSlot(
+      tenant.workspaceId,
+      body.brandId,
+      body.keyword,
+    );
+  }
+
+  @Get('keyword-rotation')
+  @ApiOperation({
+    summary:
+      "Current state of the workspace's sequential keyword scheduler (null if never started) - which keyword/company currently holds the slot, how much time is left, and how many full cycles have completed.",
+  })
+  getKeywordRotation(@CurrentTenant() tenant: TenantContext) {
+    return this.scansService.getKeywordRotationStatus(tenant.workspaceId);
+  }
+
+  @Get('active-by-keyword')
+  @ApiOperation({
+    summary:
+      "Currently active (queued/running) keyword-scoped scans for one brand, keyed by keyword - powers the Brands page's per-keyword start/stop toggle",
+  })
+  @ApiQuery({ name: 'brandId', required: true })
+  async activeByKeyword(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('brandId') brandId: string,
+  ) {
+    return this.scansService.listActiveByKeyword(tenant.workspaceId, brandId);
   }
 
   @Get('search')
@@ -115,6 +554,18 @@ export class ScansController {
       'Only repos created on/before this date (YYYY-MM-DD). Repository search only.',
   })
   @ApiQuery({
+    name: 'pushedFrom',
+    required: false,
+    description:
+      'Only repos last pushed to on/after this date (YYYY-MM-DD) - filters by recent activity, independent of createdFrom/createdTo. Repository search only.',
+  })
+  @ApiQuery({
+    name: 'pushedTo',
+    required: false,
+    description:
+      'Only repos last pushed to on/before this date (YYYY-MM-DD). Repository search only.',
+  })
+  @ApiQuery({
     name: 'includeSeen',
     required: false,
     description:
@@ -127,16 +578,25 @@ export class ScansController {
     @Query('type') type: 'repositories' | 'code' = 'repositories',
     @Query('createdFrom') createdFrom?: string,
     @Query('createdTo') createdTo?: string,
+    @Query('pushedFrom') pushedFrom?: string,
+    @Query('pushedTo') pushedTo?: string,
     @Query('includeSeen') includeSeen?: string,
   ) {
     const p = Math.max(1, Number(page) || 1);
-    if (type === 'code' && (createdFrom || createdTo)) {
+    if (
+      type === 'code' &&
+      (createdFrom || createdTo || pushedFrom || pushedTo)
+    ) {
       throw new BadRequestException(
-        'createdFrom/createdTo only apply to repository search, not code search',
+        'createdFrom/createdTo/pushedFrom/pushedTo only apply to repository search, not code search',
       );
     }
     const createdQualifier = buildCreatedQualifier(createdFrom, createdTo);
-    const query = createdQualifier ? `${q} ${createdQualifier}` : q;
+    const pushedQualifier = buildPushedQualifier(pushedFrom, pushedTo);
+    const dateQualifiers = [createdQualifier, pushedQualifier]
+      .filter(Boolean)
+      .join(' ');
+    const query = dateQualifiers ? `${q} ${dateQualifiers}` : q;
     const want = includeSeen === 'true';
 
     const result =

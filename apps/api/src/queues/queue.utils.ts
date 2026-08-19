@@ -99,3 +99,34 @@ export async function withJobTimeout<T>(
     if (timer) clearTimeout(timer);
   }
 }
+
+/**
+ * A worker sleeping through a GitHub-imposed rate-limit wait (see
+ * GitHubHttpClient.delayOrThrow) has no way to notice the scan it's working
+ * for was cancelled in the meantime - it just blocks its one worker slot for
+ * the full wait, even for work nobody wants anymore. This polls cancellation
+ * status while that wait is in progress and aborts `signal` the moment it
+ * flips, so `sleep()` (which already honors the signal) returns immediately
+ * instead of running out the clock. Caller MUST invoke the returned cleanup
+ * function (typically in a `finally`) once the work settles, or the interval
+ * leaks for the life of the process.
+ */
+export function watchForCancellation(
+  scanState: { isCancelled(scanJobId: string): Promise<boolean> },
+  scanJobId: string,
+  abort: AbortController,
+  intervalMs = Number(process.env.CANCELLATION_POLL_INTERVAL_MS || 3000),
+): () => void {
+  const timer = setInterval(() => {
+    scanState
+      .isCancelled(scanJobId)
+      .then((cancelled) => {
+        if (cancelled) abort.abort();
+      })
+      .catch(() => {
+        // Best-effort - a transient DB hiccup here just means the next tick
+        // tries again; it must never crash the job over a polling check.
+      });
+  }, intervalMs);
+  return () => clearInterval(timer);
+}

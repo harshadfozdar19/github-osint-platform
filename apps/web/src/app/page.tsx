@@ -67,47 +67,58 @@ const features = [
 ];
 
 const severities = [
-  { label: 'Critical', color: 'var(--critical)', range: '85–100' },
-  { label: 'High', color: 'var(--high)', range: '65–84' },
-  { label: 'Medium', color: 'var(--medium)', range: '40–64' },
-  { label: 'Low', color: 'var(--low)', range: '0–39' },
+  { label: 'Critical', color: 'var(--critical)', range: 'Score 85–100' },
+  { label: 'High', color: 'var(--high)', range: 'Score 65–84' },
+  { label: 'Medium', color: 'var(--medium)', range: 'Score 40–64' },
+  { label: 'Low', color: 'var(--low)', range: 'Score 0–39' },
 ];
+
+// Bespoke pill buttons for this page only - the app's internal UI keeps its
+// own rounded-lg Button component; this marketing page uses a fully-rounded
+// shape as its own deliberate visual identity, so it isn't built on top of
+// buttonClasses().
+const pillPrimary =
+  'inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[var(--accent-deep)] px-6 text-sm font-semibold text-white transition-all duration-200 ease-out hover:brightness-110 hover:shadow-lg hover:shadow-[var(--accent-deep)]/30 active:scale-[0.98]';
+const pillOutline =
+  'inline-flex h-11 items-center justify-center gap-2 rounded-full border-2 border-[var(--text)] bg-white px-6 text-sm font-semibold text-[var(--text)] transition-all duration-200 ease-out hover:bg-[var(--accent-deep)] hover:border-[var(--accent-deep)] hover:text-white active:scale-[0.98]';
+const pillPrimaryOnDark =
+  'inline-flex h-11 items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-[var(--accent-deep)] transition-all duration-200 ease-out hover:brightness-95 active:scale-[0.98]';
+const pillOutlineOnDark =
+  'inline-flex h-11 items-center justify-center gap-2 rounded-full border-2 border-white/40 px-6 text-sm font-semibold text-white transition-all duration-200 ease-out hover:border-white hover:bg-white hover:text-[var(--accent-deep)] active:scale-[0.98]';
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden">
-      {/* Ambient glow orbs, matching the radial gradients used site-wide */}
+    <div className="relative min-h-screen overflow-x-hidden bg-[var(--bg)]">
+      {/* Ambient wash - two barely-there blue blobs, nothing else. Kept
+          deliberately subtle: the page should read as clean and corporate,
+          not as a colorful showcase. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-40 -left-40 h-[32rem] w-[32rem] rounded-full opacity-30 blur-3xl"
-        style={{ background: 'radial-gradient(circle, var(--accent), transparent 70%)' }}
+        className="pointer-events-none absolute -top-52 -left-52 h-[36rem] w-[36rem] rounded-full opacity-25 blur-3xl"
+        style={{ background: 'radial-gradient(circle, var(--accent-border), transparent 70%)' }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute top-20 right-[-10rem] h-[28rem] w-[28rem] rounded-full opacity-20 blur-3xl"
-        style={{ background: 'radial-gradient(circle, #facc15, transparent 70%)' }}
+        className="pointer-events-none absolute top-10 right-[-12rem] h-[30rem] w-[30rem] rounded-full opacity-15 blur-3xl"
+        style={{ background: 'radial-gradient(circle, var(--accent), transparent 70%)' }}
       />
 
       <div className="relative mx-auto max-w-6xl px-6">
         {/* Header */}
         <header className="flex items-center justify-between py-6">
-          <div className="inline-flex items-center gap-2 text-[var(--accent)]">
-            <Activity className="h-6 w-6" aria-hidden />
-            <span className="text-lg font-semibold tracking-wide text-[var(--text)]">
+          <div className="inline-flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-deep)] text-white shadow-sm">
+              <Activity className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="text-lg font-bold tracking-tight text-[var(--text)]">
               OSINT Watch
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <Link
-              href="/login"
-              className="rounded-md border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--bg-elevated)]"
-            >
+            <Link href="/login" className={pillOutline}>
               Sign In
             </Link>
-            <Link
-              href="/register"
-              className="rounded-md bg-[var(--accent-dim)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--accent-hover)]"
-            >
+            <Link href="/register" className={pillPrimary}>
               Get Started
             </Link>
           </div>
@@ -115,33 +126,27 @@ export default function HomePage() {
 
         {/* Hero */}
         <section className="py-20 text-center sm:py-28">
-          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-elevated)]/70 px-4 py-1.5 text-xs text-[var(--muted)]">
+          <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white px-4 py-1.5 text-xs font-medium text-[var(--text)]">
             <Lock className="h-3.5 w-3.5" aria-hidden />
             Defensive OSINT · No code execution · Secrets auto-redacted
           </div>
-          <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-6xl">
+          <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight tracking-tight text-[var(--text)] sm:text-6xl">
             Catch{' '}
-            <span className="bg-gradient-to-r from-[var(--accent)] to-[#facc15] bg-clip-text text-transparent">
+            <span className="box-decoration-clone rounded-lg bg-[var(--accent-soft)] px-2 py-0.5">
               leaked secrets, fake apps, and phishing kits
             </span>{' '}
             on GitHub before they catch you
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-base text-[var(--muted)] sm:text-lg">
+          <p className="mx-auto mt-6 max-w-2xl text-base text-[var(--text)]/65 sm:text-lg">
             A GitHub threat-intelligence platform that watches public repositories for
             exposed credentials, brand impersonation, and malicious clones - then scores
             every finding from 0 to 100 so you know instantly what actually matters.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              href="/register"
-              className="rounded-md bg-[var(--accent-dim)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-dim)]/30 transition-all hover:scale-[1.03] hover:bg-[var(--accent-hover)]"
-            >
+            <Link href="/register" className={pillPrimary + ' h-12 px-7 text-base'}>
               Create Free Account
             </Link>
-            <Link
-              href="/login"
-              className="rounded-md border border-[var(--border)] px-6 py-3 text-sm font-semibold text-[var(--text)] transition-colors hover:bg-[var(--bg-elevated)]"
-            >
+            <Link href="/login" className={pillOutline + ' h-12 px-7 text-base'}>
               Sign In
             </Link>
           </div>
@@ -153,58 +158,73 @@ export default function HomePage() {
             {features.map(({ icon: Icon, title, body }) => (
               <div
                 key={title}
-                className="group rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/60 p-6 transition-all hover:border-[var(--accent)]/50 hover:bg-[var(--bg-elevated)]"
+                className="rounded-xl border border-[var(--border)] bg-white p-6 transition-all duration-200 ease-out hover:-translate-y-1 hover:border-[var(--accent-deep)]/40 hover:shadow-[0_16px_32px_-20px_rgba(0,4,143,0.35)]"
               >
-                <div className="mb-4 inline-flex rounded-lg bg-[var(--accent-dim)]/20 p-2.5 text-[var(--accent)] transition-colors group-hover:bg-[var(--accent-dim)]/30">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent-deep)]">
                   <Icon className="h-5 w-5" aria-hidden />
                 </div>
                 <h3 className="mb-1.5 font-semibold text-[var(--text)]">{title}</h3>
-                <p className="text-sm leading-relaxed text-[var(--muted)]">{body}</p>
+                <p className="text-sm leading-relaxed text-[var(--text)]/65">{body}</p>
               </div>
             ))}
           </div>
         </section>
+      </div>
 
-        {/* Risk scoring strip */}
-        <section className="py-12">
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/60 p-6 sm:p-8">
-            <div className="mb-6 flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-[var(--accent)]" aria-hidden />
-              <h2 className="font-semibold text-[var(--text)]">
-                Every finding gets a risk score, not just a list of links
-              </h2>
-            </div>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {severities.map((s) => (
-                <div
-                  key={s.label}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--bg)]/60 p-4 text-center"
-                >
-                  <div
-                    className="mx-auto mb-2 h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: s.color }}
-                  />
-                  <p className="text-sm font-semibold text-[var(--text)]">{s.label}</p>
-                  <p className="text-xs text-[var(--muted)]">{s.range}</p>
-                </div>
-              ))}
-            </div>
+      {/* Risk scoring - full-bleed dark section, breaking out of the
+          max-w-6xl container so it spans the viewport like a distinct
+          "block" in the page, with its own inner max-w-6xl for alignment. */}
+      <section className="mt-4 bg-[var(--sidebar-bg)] py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-white">
+            <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
+            Risk scoring
           </div>
-        </section>
+          <h2 className="max-w-xl text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Every finding gets a risk score, not just a list of links.
+          </h2>
+          <p className="mt-3 max-w-xl text-sm text-white/65 sm:text-base">
+            Each detection is scored 0–100 from severity, confidence, and context, so triage
+            starts with what actually matters instead of an undifferentiated feed.
+          </p>
 
+          <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {severities.map((s) => (
+              <div
+                key={s.label}
+                className="rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-card-bg)] p-5 transition-transform duration-200 ease-out hover:-translate-y-1"
+              >
+                <div
+                  className="mb-3 h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: s.color }}
+                />
+                <p className="text-base font-bold text-white">{s.label}</p>
+                <p className="mt-0.5 text-xs text-white/60">{s.range}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-10 flex flex-wrap items-center gap-4">
+            <Link href="/register" className={pillPrimaryOnDark}>
+              Create Free Account
+            </Link>
+            <Link href="/login" className={pillOutlineOnDark}>
+              Sign In
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <div className="relative mx-auto max-w-6xl px-6">
         {/* Footer / connect */}
-        <footer className="mt-8 border-t border-[var(--border)] py-10">
+        <footer className="py-10">
           <div className="flex flex-col items-center gap-4 text-center">
-            <p className="text-sm text-[var(--muted)]">
-              Built by <span className="text-[var(--text)]">Harshad Fozdar</span> - let&apos;s connect
+            <p className="text-sm text-[var(--text)]/65">
+              Built by <span className="font-medium text-[var(--text)]">Harshad Fozdar</span> -
+              let&apos;s connect
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <a
-                href={GITHUB_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--text)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
-              >
+              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className={pillOutline}>
                 <GithubIcon className="h-4 w-4" />
                 GitHub Repo
               </a>
@@ -212,20 +232,17 @@ export default function HomePage() {
                 href={LINKEDIN_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--text)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
+                className={pillOutline}
               >
                 <LinkedinIcon className="h-4 w-4" />
                 LinkedIn
               </a>
-              <a
-                href={`mailto:${EMAIL}`}
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--border)] px-4 py-2 text-sm text-[var(--text)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--accent)]"
-              >
+              <a href={`mailto:${EMAIL}`} className={pillOutline}>
                 <Mail className="h-4 w-4" aria-hidden />
                 {EMAIL}
               </a>
             </div>
-            <p className="mt-2 text-xs text-[var(--muted)]">
+            <p className="mt-2 text-xs text-[var(--text)]/50">
               This tool only analyzes publicly available GitHub data. It never executes,
               installs, or runs code from scanned repositories.
             </p>

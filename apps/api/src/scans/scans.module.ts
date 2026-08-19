@@ -5,6 +5,11 @@ import {
   Repository,
   RepositorySchema,
 } from '../repositories/schemas/repository.schema';
+import {
+  MonitoredBrand,
+  MonitoredBrandSchema,
+} from '../brands/schemas/monitored-brand.schema';
+import { Finding, FindingSchema } from '../findings/schemas/finding.schema';
 import { ScansService } from './scans.service';
 import { ScansController } from './scans.controller';
 import { SeenRepositoriesService } from './seen-repositories.service';
@@ -17,6 +22,8 @@ import { GitHubModule } from '../github/github.module';
     MongooseModule.forFeature([
       { name: ScanJob.name, schema: ScanJobSchema },
       { name: Repository.name, schema: RepositorySchema },
+      { name: MonitoredBrand.name, schema: MonitoredBrandSchema },
+      { name: Finding.name, schema: FindingSchema },
     ]),
     QueuesModule.forRoot(),
     // TenantGuard (used on ScansController) depends on WorkspacesService.

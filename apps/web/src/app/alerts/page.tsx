@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
-import { EmptyState, LoadingBlock, SeverityBadge } from '@/components/ui';
+import { Badge, Card, CardSkeleton, EmptyState, ErrorState, SeverityBadge } from '@/components/ui';
 import { api, AlertItem, Finding, Paginated } from '@/lib/api';
 
 interface AlertsResponse extends Paginated<AlertItem> {
@@ -43,10 +43,16 @@ export default function AlertsPage() {
         title="Alerts"
         subtitle="In-app alerts for new Critical and High findings. Email/Slack can plug into the same service later."
       >
-        {loading ? <LoadingBlock /> : null}
-        {error ? <p className="text-[var(--danger)]">{error}</p> : null}
+        {loading ? (
+          <div className="space-y-3">
+            <CardSkeleton count={3} />
+          </div>
+        ) : null}
+        {error ? <ErrorState message={error} /> : null}
         {data ? (
-          <p className="mb-4 text-sm text-[var(--muted)]">Unread: {data.unreadCount}</p>
+          <p className="mb-4 text-sm text-[var(--muted)]">
+            Unread: <span className="font-medium text-[var(--text)]">{data.unreadCount}</span>
+          </p>
         ) : null}
         {!loading && data && data.data.length === 0 ? (
           <EmptyState
@@ -61,21 +67,19 @@ export default function AlertsPage() {
                 ? a.findingId
                 : (a.findingId as Finding | undefined)?._id;
             return (
-              <li
-                key={a._id}
-                className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-4"
-              >
+              <Card key={a._id} as="li" className={a.read ? 'p-4' : 'border-[var(--accent-border)] p-4'}>
                 <div className="flex flex-wrap items-center gap-2">
                   <SeverityBadge severity={a.severity} />
-                  {!a.read ? (
-                    <span className="text-xs text-[var(--accent)]">NEW</span>
-                  ) : null}
-                  <h3 className="font-medium">{a.title}</h3>
+                  {!a.read ? <Badge tone="accent" dot>NEW</Badge> : null}
+                  <h3 className="font-semibold">{a.title}</h3>
                 </div>
                 <p className="mt-2 text-sm text-[var(--muted)]">{a.message}</p>
-                <div className="mt-3 flex gap-3 text-sm">
+                <div className="mt-3 flex gap-4 text-sm">
                   {findingId ? (
-                    <Link href={`/findings/${findingId}`} className="text-[var(--accent)] hover:underline">
+                    <Link
+                      href={`/findings/${findingId}`}
+                      className="font-medium text-[var(--accent)] hover:underline"
+                    >
                       Open finding
                     </Link>
                   ) : null}
@@ -83,13 +87,13 @@ export default function AlertsPage() {
                     <button
                       type="button"
                       onClick={() => markRead(a._id)}
-                      className="text-[var(--muted)] hover:text-[var(--text)]"
+                      className="text-[var(--muted)] transition-colors duration-150 hover:text-[var(--text)]"
                     >
                       Mark read
                     </button>
                   ) : null}
                 </div>
-              </li>
+              </Card>
             );
           })}
         </ul>

@@ -17,6 +17,8 @@ import { SeedModule } from './seed/seed.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { HealthController } from './health/health.controller';
 import { KeywordsModule } from './keywords/keywords.module';
+import { FingerprintsModule } from './fingerprints/fingerprints.module';
+import { ContributorsModule } from './contributors/contributors.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -51,6 +53,8 @@ import { AppController } from './app.controller';
     GitHubModule,
     SeedModule,
     KeywordsModule,
+    FingerprintsModule,
+    ContributorsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

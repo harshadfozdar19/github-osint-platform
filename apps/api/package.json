@@ -19,6 +19,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "SEED_ON_BOOT=true ts-node -r tsconfig-paths/register src/seed/run-seed.ts",
     "migrate:workspaces": "ts-node -r tsconfig-paths/register src/migrations/migrate-workspaces.ts",
+    "migrate:repository-origin": "ts-node -r tsconfig-paths/register src/migrations/migrate-repository-origin.ts",
     "start:worker": "node dist/worker",
     "start:worker:dev": "ENABLE_QUEUE_WORKERS=true ts-node -r tsconfig-paths/register src/worker.ts",
     "typecheck": "tsc --noEmit"

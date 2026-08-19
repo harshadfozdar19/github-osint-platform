@@ -1,52 +1,155 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #100b1c;
-  --bg-elevated: #1a1330;
-  --bg-panel: #221a3d;
-  --border: #372a54;
-  --text: #f3eefb;
-  --muted: #a99bc7;
-  --accent: #c084fc;
-  --accent-dim: #7e22ce;
-  --accent-hover: #9333ea;
-  --danger: #f87171;
-  --warning: #fbbf24;
-  --info: #38bdf8;
-  --critical: #ef4444;
-  --high: #f97316;
-  --medium: #eab308;
-  --low: #22c55e;
+  /* ---- Brand palette (source of truth - do not hardcode these hexes
+     elsewhere; reference the semantic tokens below instead) ----
+     #E3F2FD  very light backgrounds, subtle sections, selected states
+     #90CAF9  secondary accents, borders, subtle highlights
+     #2196F3  primary actions, links, active states, important accents
+     #0D47A1  strong headings, dark accents, navigation emphasis */
+
+  --bg: #eef5fc;
+  --bg-elevated: #ffffff;
+  --bg-panel: #ffffff;
+  --bg-subtle: #eaf2fb;
+  --border: #dbe7f5;
+  --text: #0f172a;
+  --muted: #5b7290;
+
+  --accent: #2196f3;
+  --accent-dim: #2196f3;
+  --accent-hover: #1a7fd6;
+  --accent-active: #0d47a1;
+  --accent-soft: #e3f2fd;
+  --accent-border: #90cafa;
+  /* Deepest, most saturated step in the blue family - for marketing-page
+     hero CTAs and dark full-bleed sections, not app-UI buttons (those stay
+     on --accent so they read as "the same blue" as links/active states). */
+  --accent-deep: #00048f;
+
+  --danger: #ef4444;
+  --warning: #d97706;
+  --info: #0891b2;
+  --critical: #dc2626;
+  --high: #ea580c;
+  --medium: #ca8a04;
+  --low: #16a34a;
+
+  /* Pre-mixed tint/border pairs for each semantic color, one step per tone
+     (same idea as --accent-soft/--accent-border above). These MUST be
+     literal hex, not `var(--x)` with a hex-alpha suffix appended at the
+     call site - "background: var(--danger)22" looks plausible but is
+     invalid CSS (var() substitution splices token streams, it doesn't
+     re-lex the result into a single 8-digit hex color), so the browser
+     silently drops the whole declaration and the background stays fully
+     transparent. That was happening everywhere a tone "background" was
+     supposed to show - badges, alerts, banners - hence looking washed out. */
+  --danger-soft: #fdeaea;
+  --danger-border-soft: #f5a3a3;
+  --warning-soft: #fbf1e4;
+  --warning-border-soft: #e8bd82;
+  --low-soft: #e6f7ec;
+  --low-border-soft: #86d1a3;
+  --critical-soft: #fbe7e7;
+  --critical-border-soft: #ec8888;
+  --high-soft: #fdede4;
+  --high-border-soft: #f3a379;
+  --medium-soft: #f9f2e3;
+  --medium-border-soft: #e2bf75;
+
+  /* Shadow scale - deliberately subtle (no huge/dramatic elevation) */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 12px 32px rgba(13, 71, 161, 0.12), 0 2px 6px rgba(15, 23, 42, 0.05);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+
+  /* Dedicated surface for AppShell's nav rail - deliberately a distinct
+     deep-navy zone (still squarely in the blue family) rather than the
+     same near-white tone as the page content, so the app's primary
+     navigation reads as its own zone at a glance instead of blending in.
+     Each nav row also gets its OWN card background (--sidebar-card-bg),
+     one step lighter than --sidebar-bg, at rest - not just on hover -
+     so text/icon contrast never depends on a single subtle color choice
+     against a flat background; hover brightens the card a step further
+     as feedback. Text is solid white at all times for the same reason. */
+  --sidebar-bg: #0a1e3d;
+  --sidebar-border: #123258;
+  --sidebar-text: #ffffff;
+  --sidebar-text-muted: #a9c6ea;
+  --sidebar-card-bg: #123258;
+  --sidebar-card-hover-bg: #1a4a86;
+  --sidebar-active-bg: #2196f3;
 }
 
-* {
-  box-sizing: border-box;
+/* @layer base (not plain unlayered CSS) - Tailwind v4's utilities live in
+   @layer utilities, which is registered AFTER base and so normally wins on
+   ties, but that only holds if our own reset rules are actually inside a
+   layer too. Cascade layers rank unlayered CSS above every layer regardless
+   of selector specificity - so a plain top-level `a { color: inherit }`
+   here would silently beat `text-white`/`text-[var(--x)]` on every <Link>,
+   no matter how specific. (This was the real cause of an earlier "sidebar
+   nav text looks dim" report we patched with inline styles at the time
+   without knowing why - same bug, different symptom.) */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    /* No overflow-x: hidden here - any non-visible overflow on html/body
+       turns it into the containing scroll context that position: sticky
+       children (the AppShell sidebar) resolve against instead of the
+       viewport, which silently breaks sticky. The actual fix for runaway
+       child widths lives locally (min-w-0/break-words on the offending
+       flex/grid items) instead of papering over it at the root. */
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(33, 150, 243, 0.06), transparent 60%),
+      radial-gradient(900px 500px at 90% 0%, rgba(13, 71, 161, 0.05), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans), "Plus Jakarta Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  ::selection {
+    background: rgba(33, 150, 243, 0.25);
+  }
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(192, 132, 252, 0.1), transparent 60%),
-    radial-gradient(900px 500px at 90% 0%, rgba(250, 204, 21, 0.05), transparent 55%),
-    linear-gradient(180deg, #100b1c 0%, #140f22 100%);
-  color: var(--text);
-  font-family: var(--font-sans), "IBM Plex Sans", sans-serif;
+/* Visible, on-brand keyboard focus - never removed, only re-styled. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-
-::selection {
-  background: rgba(192, 132, 252, 0.3);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -10,14 +10,9 @@ import { Model, Types } from 'mongoose';
 import Redis from 'ioredis';
 import { Observable, Subject } from 'rxjs';
 import { filter, finalize, map, merge, takeUntil } from 'rxjs';
-import { ScanJobStatus } from '../../common/enums';
+import { ScanJobStatus, TERMINAL_SCAN_STATUSES } from '../../common/enums';
 
-const TERMINAL_JOB_STATUSES = [
-  ScanJobStatus.COMPLETED,
-  ScanJobStatus.PARTIALLY_COMPLETED,
-  ScanJobStatus.FAILED,
-  ScanJobStatus.CANCELLED,
-];
+const TERMINAL_JOB_STATUSES = TERMINAL_SCAN_STATUSES;
 import { safeJobError } from '../../queues/queue.utils';
 import { ScanJob, ScanJobDocument } from '../schemas/scan-job.schema';
 import {
@@ -202,7 +197,21 @@ export class ScanProgressService implements OnModuleDestroy {
     const workspaceId = String(job.workspaceId);
     const scanJobId = String(job._id);
     const counts = this.countsFromJob(job);
-    const status = overrides.status || job.status;
+    // A caller's overrides.status is usually just "what phase am I in" and
+    // is safe to trust (e.g. RUNNING while a search job is mid-flight) -
+    // except when the freshly-read job doc is ALREADY terminal. That
+    // happens when a scan gets cancelled (e.g. the sequential scheduler's
+    // keyword handoff, ScanStateService.finalize) while some other worker
+    // that hadn't yet noticed the cancellation is still wrapping up and
+    // calls emitFromScanId with a hardcoded status: RUNNING. Without this,
+    // that straggler's event would broadcast "running" over the live
+    // progress stream for an already-cancelled/completed scan, making the
+    // UI appear to keep going well past when it actually stopped. A
+    // terminal DB status can never legitimately un-terminalize, so it
+    // always wins over a non-terminal override.
+    const status = TERMINAL_JOB_STATUSES.includes(job.status)
+      ? job.status
+      : overrides.status || job.status;
     const phase =
       overrides.phase ||
       this.phaseFromStatus(status, counts, job.awaitingSearch || 0);
@@ -462,12 +471,14 @@ export class ScanProgressService implements OnModuleDestroy {
     reposSkipped?: number;
     reposRescanned?: number;
     reposResumed?: number;
+    reposPendingAnalysis?: number;
     findingsCreated?: number;
     findingsUpdated?: number;
     findingsNew?: number;
     findingsUnchanged?: number;
     findingsReopened?: number;
     findingsResolved?: number;
+    findingsHighRisk?: number;
     queriesUsed?: string[];
     awaitingSearch?: number;
   }): ScanProgressCounts {
@@ -485,10 +496,12 @@ export class ScanProgressService implements OnModuleDestroy {
       reposSkipped: job.reposSkipped || 0,
       reposRescanned: job.reposRescanned || 0,
       reposResumed: job.reposResumed || 0,
+      reposPendingAnalysis: job.reposPendingAnalysis || 0,
       findingsNew: job.findingsNew || 0,
       findingsUnchanged: job.findingsUnchanged || 0,
       findingsReopened: job.findingsReopened || 0,
       findingsResolved: job.findingsResolved || 0,
+      findingsHighRisk: job.findingsHighRisk || 0,
     };
   }
 

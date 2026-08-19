@@ -3,7 +3,17 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
-import { EmptyState, LoadingBlock } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Field,
+  Input,
+  Select,
+  TableSkeleton,
+} from '@/components/ui';
 import { api, Keyword } from '@/lib/api';
 
 const CATEGORIES = ['general', 'phishing', 'malware', 'secret', 'brand'];
@@ -78,65 +88,53 @@ export default function KeywordsPage() {
         title="Search keywords"
         subtitle="Manage discovery keywords used in GitHub scan query generation. Higher priority keywords are preferred."
       >
-        <form
-          onSubmit={onCreate}
-          className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-4"
-        >
-          <label className="text-sm">
-            <span className="mb-1 block text-[var(--muted)]">Keyword</span>
-            <input
-              value={form.keyword}
-              onChange={(e) => setForm({ ...form, keyword: e.target.value })}
-              className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-              placeholder="e.g. wallet"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-[var(--muted)]">Category</span>
-            <select
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block text-[var(--muted)]">Priority (1–10)</span>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={form.priority}
-              onChange={(e) =>
-                setForm({ ...form, priority: Number(e.target.value) || 5 })
-              }
-              className="w-20 rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-[var(--accent-dim)] px-4 py-2 text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
-          >
-            {saving ? 'Adding…' : 'Add keyword'}
-          </button>
-        </form>
+        <Card className="mb-6 p-4">
+          <form onSubmit={onCreate} className="flex flex-wrap items-end gap-3">
+            <Field label="Keyword">
+              <Input
+                value={form.keyword}
+                onChange={(e) => setForm({ ...form, keyword: e.target.value })}
+                placeholder="e.g. wallet"
+              />
+            </Field>
+            <Field label="Category">
+              <Select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Priority (1–10)">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={form.priority}
+                onChange={(e) => setForm({ ...form, priority: Number(e.target.value) || 5 })}
+                className="w-20"
+              />
+            </Field>
+            <Button type="submit" loading={saving}>
+              {saving ? 'Adding…' : 'Add keyword'}
+            </Button>
+          </form>
+        </Card>
 
-        {error ? <p className="mb-4 text-[var(--danger)]">{error}</p> : null}
-        {loading ? <LoadingBlock /> : null}
+        {error ? <ErrorState message={error} /> : null}
+        {loading ? <TableSkeleton rows={5} cols={5} /> : null}
         {!loading && keywords.length === 0 ? (
           <EmptyState title="No keywords" body="Add keywords to customize scan discovery queries." />
         ) : null}
 
         {!loading && keywords.length > 0 ? (
-          <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+          <div className="overflow-x-auto rounded-xl border border-[var(--accent-border)]/50 bg-[var(--bg-elevated)] shadow-[var(--shadow-sm)]">
             <table className="min-w-full text-sm">
-              <thead className="bg-[var(--bg-elevated)] text-left text-[var(--muted)]">
+              <thead className="bg-[var(--bg-subtle)] text-left text-[var(--muted)]">
                 <tr>
                   <th className="px-4 py-3">Keyword</th>
                   <th className="px-4 py-3">Category</th>
@@ -147,24 +145,25 @@ export default function KeywordsPage() {
               </thead>
               <tbody>
                 {keywords.map((kw) => (
-                  <tr key={kw._id} className="border-t border-[var(--border)]">
+                  <tr
+                    key={kw._id}
+                    className="border-t border-[var(--border)] transition-colors duration-150 hover:bg-[var(--bg-subtle)]"
+                  >
                     <td className="px-4 py-3 font-medium">{kw.keyword}</td>
                     <td className="px-4 py-3 capitalize">{kw.category}</td>
                     <td className="px-4 py-3">{kw.priority}</td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => toggle(kw)}
-                        className="rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)]"
-                      >
-                        {kw.enabled ? 'Enabled' : 'Disabled'}
+                      <button type="button" onClick={() => toggle(kw)}>
+                        <Badge tone={kw.enabled ? 'success' : 'muted'} className="cursor-pointer normal-case">
+                          {kw.enabled ? 'Enabled' : 'Disabled'}
+                        </Badge>
                       </button>
                     </td>
                     <td className="px-4 py-3">
                       <button
                         type="button"
                         onClick={() => remove(kw._id)}
-                        className="text-xs text-[var(--danger)] hover:underline"
+                        className="text-xs font-medium text-[var(--danger)] hover:underline"
                       >
                         Delete
                       </button>

@@ -8,6 +8,24 @@ import {
 import { MONITORED_BRANDS } from '../common/enums';
 import { CreateBrandDto, UpdateBrandFullDto } from './dto/create-brand.dto';
 
+// Users often paste the org's GitHub URL (e.g. from their browser address bar)
+// instead of the bare login the GitHub API expects - normalize so a pasted
+// "https://github.com/angel-one" still resolves to owner "angel-one" rather
+// than silently failing owner-format validation deep in the scan pipeline.
+function normalizeGithubOwner(raw: string): string {
+  const trimmed = raw.trim();
+  const match = trimmed.match(
+    /^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)/i,
+  );
+  return match ? match[1] : trimmed;
+}
+
+function normalizeGithubOwners(owners: string[]): string[] {
+  return owners
+    .map((owner) => normalizeGithubOwner(owner))
+    .filter((owner) => owner.length > 0);
+}
+
 @Injectable()
 export class BrandsService {
   constructor(
@@ -48,6 +66,7 @@ export class BrandsService {
       description: dto.description || '',
       aliases: dto.aliases || [],
       keywords: dto.keywords || [],
+      trustedGithubOwners: normalizeGithubOwners(dto.trustedGithubOwners || []),
       enabled: dto.enabled !== false,
     });
   }
@@ -61,6 +80,11 @@ export class BrandsService {
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.aliases !== undefined) updateData.aliases = dto.aliases;
     if (dto.keywords !== undefined) updateData.keywords = dto.keywords;
+    if (dto.trustedGithubOwners !== undefined) {
+      updateData.trustedGithubOwners = normalizeGithubOwners(
+        dto.trustedGithubOwners,
+      );
+    }
     if (dto.enabled !== undefined) updateData.enabled = dto.enabled;
 
     const brand = await this.brandModel

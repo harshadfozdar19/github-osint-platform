@@ -339,6 +339,68 @@ describe('IncrementalScanService checkpoints', () => {
   });
 });
 
+describe('IncrementalScanService.recordAdditionalBrandMatch', () => {
+  const workspaceId = new Types.ObjectId().toHexString();
+  const brandId = new Types.ObjectId().toHexString();
+
+  function buildService() {
+    const repoModel = {
+      updateOne: jest.fn().mockReturnValue({ exec: () => Promise.resolve({}) }),
+    };
+    const service = new IncrementalScanService(
+      {} as never,
+      repoModel as never,
+      new DetectionEngine(),
+    );
+    return { service, repoModel };
+  }
+
+  it('pushes a new entry, excluding repos where this brand is already the primary discoverer or already recorded', async () => {
+    const { service, repoModel } = buildService();
+
+    await service.recordAdditionalBrandMatch(workspaceId, 42, {
+      brandId,
+      keyword: 'groww',
+      matchedField: 'description',
+      matchedPath: '',
+      matchedText: 'mentions groww and motilal oswal',
+    });
+
+    expect(repoModel.updateOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: expect.any(Types.ObjectId) as Types.ObjectId,
+        githubId: 42,
+        discoveryBrandId: { $ne: new Types.ObjectId(brandId) },
+        'additionalBrandMatches.brandId': { $ne: new Types.ObjectId(brandId) },
+      }),
+      expect.objectContaining({
+        $push: {
+          additionalBrandMatches: expect.objectContaining({
+            brandId: new Types.ObjectId(brandId),
+            keyword: 'groww',
+            matchedField: 'description',
+            matchedText: 'mentions groww and motilal oswal',
+          }) as Record<string, unknown>,
+        },
+      }),
+    );
+  });
+
+  it('defaults missing evidence fields to empty strings rather than undefined', async () => {
+    const { service, repoModel } = buildService();
+
+    await service.recordAdditionalBrandMatch(workspaceId, 42, { brandId });
+
+    const [, update] = repoModel.updateOne.mock.calls[0] as [
+      unknown,
+      { $push: { additionalBrandMatches: Record<string, unknown> } },
+    ];
+    expect(update.$push.additionalBrandMatches.matchedField).toBe('');
+    expect(update.$push.additionalBrandMatches.matchedPath).toBe('');
+    expect(update.$push.additionalBrandMatches.matchedText).toBe('');
+  });
+});
+
 describe('Finding lifecycle + duplicate prevention', () => {
   function buildPipeline(existingFinding: Record<string, unknown> | null) {
     const findingModel = {
@@ -363,11 +425,19 @@ describe('Finding lifecycle + duplicate prevention', () => {
       deleteMany: jest.fn().mockResolvedValue({}),
       insertMany: jest.fn().mockResolvedValue([]),
     };
+    const repoModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: () => Promise.resolve([]),
+      }),
+    };
     const pipeline = new ScanPipelineService(
-      {} as never,
+      repoModel as never,
       findingModel as never,
       detectionModel as never,
-      {} as never,
+      { deleteMany: jest.fn(), find: jest.fn() } as never,
+      { getRepositoryPagesInfo: jest.fn().mockResolvedValue(null) } as never,
       new DetectionEngine(),
       new RiskScoringService(),
       { get: () => undefined } as never,
@@ -460,6 +530,7 @@ describe('Finding lifecycle + duplicate prevention', () => {
     });
     const pipeline = new ScanPipelineService(
       { findOneAndUpdate } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

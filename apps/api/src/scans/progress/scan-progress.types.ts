@@ -37,10 +37,21 @@ export interface ScanProgressCounts {
   reposSkipped: number;
   reposRescanned: number;
   reposResumed: number;
+  /** Repos this scan discovered and saved but deliberately did NOT analyze (discoveryOnly mode) - see Repository.pendingAnalysis. */
+  reposPendingAnalysis: number;
   findingsNew: number;
   findingsUnchanged: number;
   findingsReopened: number;
   findingsResolved: number;
+  /**
+   * Repos processed in this scan whose resulting finding was HIGH or
+   * CRITICAL severity - "out of the repos we looked at, how many are
+   * actually a real threat" (external scans: impersonators/clones; internal
+   * audits: the client's own repos leaking a credential badly enough to
+   * matter). Distinct from findingsNew/findingsUpdated, which count
+   * findings regardless of severity.
+   */
+  findingsHighRisk: number;
 }
 
 export interface ScanProgressEvent {
@@ -91,10 +102,12 @@ export function emptyCounts(): ScanProgressCounts {
     reposSkipped: 0,
     reposRescanned: 0,
     reposResumed: 0,
+    reposPendingAnalysis: 0,
     findingsNew: 0,
     findingsUnchanged: 0,
     findingsReopened: 0,
     findingsResolved: 0,
+    findingsHighRisk: 0,
   };
 }
 

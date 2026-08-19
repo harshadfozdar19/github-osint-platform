@@ -110,7 +110,6 @@ export class DiscoveryExpansionService {
     mode?: ScanMode;
     forceFullScan?: boolean;
     rulesetVersion?: string;
-    matchedBrand?: { id: string; name: string; aliases: string[] };
   }): Promise<number> {
     const ownerLimit = Number(this.config.get('SCAN_OWNER_FANOUT_LIMIT') || 5);
     const forkLimit = Number(this.config.get('SCAN_FORK_WALK_LIMIT') || 5);
@@ -125,18 +124,26 @@ export class DiscoveryExpansionService {
       Number(
         this.config.get('MAX_REPOSITORIES') ||
           this.config.get('SCAN_MAX_REPOS') ||
-          1000,
+          Number.MAX_SAFE_INTEGER,
       );
     const remaining = Math.max(0, maxRepos - (scan.reposDiscovered || 0));
     if (remaining <= 0) return 0;
 
-    const brands = await this.brandModel
+    const allEnabledBrands = await this.brandModel
       .find({
         workspaceId: new Types.ObjectId(input.workspaceId),
         enabled: true,
       })
       .lean()
       .exec();
+    // Keep a brand-scoped scan scoped through owner/fork expansion too -
+    // otherwise a repo pulled in because it's owned by a confirmed bad
+    // actor could still get attributed to some unrelated monitored brand.
+    const brands = scan.scopeBrandId
+      ? allEnabledBrands.filter(
+          (b) => String(b._id) === String(scan.scopeBrandId),
+        )
+      : allEnabledBrands;
 
     const mode = input.mode || ScanMode.INCREMENTAL;
     const forceFullScan = input.forceFullScan === true;
@@ -197,18 +204,10 @@ export class DiscoveryExpansionService {
       );
       if (!claimed) continue;
 
-      const matched =
-        input.matchedBrand ||
-        (() => {
-          const m = this.pipeline.matchBrand(brands, item);
-          return m
-            ? {
-                id: String(m._id),
-                name: m.name,
-                aliases: m.aliases,
-              }
-            : undefined;
-        })();
+      // Same ordering requirement as the search discovery path (see
+      // github-search.processor.ts) - record the discovery credit before
+      // enqueueing, not after this whole loop finishes.
+      await this.scanState.recordRepositoryDiscovered(input.scanJobId);
 
       await this.scanQueue.enqueueRepositoryAnalysis(
         {
@@ -234,7 +233,13 @@ export class DiscoveryExpansionService {
             name: item.name,
             default_branch: item.default_branch,
           },
-          matchedBrand: matched,
+          brands: brands.map((b) => ({
+            id: String(b._id),
+            name: b.name,
+            aliases: b.aliases,
+            trustedGithubOwners: b.trustedGithubOwners,
+            keywords: b.keywords,
+          })),
         },
         6,
       );

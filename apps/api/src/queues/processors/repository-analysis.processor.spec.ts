@@ -137,3 +137,84 @@ describe('RepositoryAnalysisProcessor - HEAD source selection', () => {
     expect(github.getRepositoryHead).toHaveBeenCalled();
   });
 });
+
+describe('RepositoryAnalysisProcessor - cancellation mid-request', () => {
+  const workspaceId = new Types.ObjectId().toHexString();
+  const scanJobId = new Types.ObjectId().toHexString();
+
+  it('completes cleanly without retrying or marking the repo failed when a cancelled scan aborts mid-request', async () => {
+    const scanQueue = { enqueueDetection: jest.fn() };
+    // First call (pre-check) says "not cancelled" so work actually starts;
+    // the catch-block check says "cancelled" - simulating the scan being
+    // cancelled while the GitHub request/wait was in flight.
+    const scanState = {
+      assertOwned: jest.fn().mockResolvedValue({}),
+      isCancelled: jest
+        .fn()
+        .mockResolvedValueOnce(false)
+        .mockResolvedValue(true),
+      isTerminal: jest.fn().mockResolvedValue(false),
+      completeAnalysisUnit: jest.fn().mockResolvedValue(undefined),
+    };
+    const pipeline = { upsertRepository: jest.fn() };
+    const incremental = {
+      isAlreadyCompleted: jest.fn().mockResolvedValue(false),
+    };
+    const github = {
+      getRepositoryHead: jest
+        .fn()
+        .mockRejectedValue(new Error('Request cancelled')),
+      clearScanPause: jest.fn().mockResolvedValue(undefined),
+    };
+    const cloneScan = {
+      shouldAttempt: jest.fn().mockResolvedValue(false),
+      getRemoteHead: jest.fn(),
+    };
+
+    const processor = new RepositoryAnalysisProcessor(
+      scanQueue as never,
+      scanState as never,
+      pipeline as never,
+      incremental as never,
+      github as never,
+      { get: () => '120000' } as never,
+      cloneScan as never,
+    );
+
+    const repo = {
+      id: 101,
+      full_name: 'acme/demo',
+      html_url: 'https://github.com/acme/demo',
+      description: null,
+      stargazers_count: 0,
+      forks_count: 0,
+      fork: false,
+      language: null,
+      topics: [],
+      created_at: '2024-01-01T00:00:00Z',
+      pushed_at: '2024-01-02T00:00:00Z',
+      owner: { login: 'acme' },
+      name: 'demo',
+    };
+
+    await processor.process({
+      data: {
+        workspaceId,
+        scanJobId,
+        mode: 'incremental',
+        rulesetVersion: 'ruleset-1',
+        repo,
+      },
+      opts: {},
+    } as never);
+
+    // No throw (BullMQ would otherwise retry with backoff), not marked
+    // failed, and nothing enqueued from a request that never completed.
+    expect(scanState.completeAnalysisUnit).toHaveBeenCalledWith(scanJobId, {
+      failed: false,
+      githubId: 101,
+    });
+    expect(pipeline.upsertRepository).not.toHaveBeenCalled();
+    expect(scanQueue.enqueueDetection).not.toHaveBeenCalled();
+  });
+});

@@ -1,7 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { ScanJobStatus } from '../common/enums';
+import { ScanJobStatus, TERMINAL_SCAN_STATUSES } from '../common/enums';
 import { safeJobError } from '../queues/queue.utils';
 import { ScanJob, ScanJobDocument } from './schemas/scan-job.schema';
 import { ScanProgressService } from './progress/scan-progress.service';
@@ -9,14 +9,21 @@ import {
   ScanProgressEventType,
   ScanProgressPhase,
 } from './progress/scan-progress.types';
+import { ScanQueueService } from '../queues/scan-queue.service';
 
 const ACTIVE_STATUSES = [ScanJobStatus.QUEUED, ScanJobStatus.RUNNING];
-const TERMINAL_STATUSES = [
-  ScanJobStatus.COMPLETED,
-  ScanJobStatus.PARTIALLY_COMPLETED,
-  ScanJobStatus.FAILED,
-  ScanJobStatus.CANCELLED,
-];
+const TERMINAL_STATUSES = TERMINAL_SCAN_STATUSES;
+
+/**
+ * How long to wait before automatically starting the next run for the same
+ * keyword-watch scan - see maybeRestartKeywordWatch. Flat regardless of
+ * whether the run that just finished found anything new - a longer cooldown
+ * for empty results was tried first (to avoid re-searching an exhausted
+ * query pointlessly), but a fast, uniform recheck was chosen instead,
+ * accepting the extra GitHub request volume it costs across every
+ * concurrently watched keyword. Overridable for tests/tuning.
+ */
+const KEYWORD_WATCH_RESTART_DELAY_MS_DEFAULT = 30_000;
 
 @Injectable()
 export class ScanStateService {
@@ -26,6 +33,8 @@ export class ScanStateService {
     @InjectModel(ScanJob.name)
     private readonly scanModel: Model<ScanJobDocument>,
     private readonly progress: ScanProgressService,
+    @Inject(forwardRef(() => ScanQueueService))
+    private readonly scanQueue: ScanQueueService,
   ) {}
 
   async getOrThrow(workspaceId: string, scanJobId: string) {
@@ -172,15 +181,50 @@ export class ScanStateService {
     return job;
   }
 
-  async completeSearchJob(scanJobId: string, analysisEnqueued: number) {
+  /**
+   * Bumps discovery counters for exactly one newly claimed repo. Callers
+   * must call this immediately after claimRepositoryForAnalysis succeeds
+   * and BEFORE enqueueing that repo's analysis job - not batched at the end
+   * of a whole search-page loop the way this used to work. Batching it
+   * raced against concurrent analysis workers: with WORKER_CONCURRENCY_
+   * REPO_ANALYSIS > 1, a fast "skip - unchanged" decision for repo #1 of a
+   * 20-repo page could call completeAnalysisUnit (reposProcessed += 1)
+   * while the search processor was still on repo #15 of the same page's
+   * enqueue loop, well before the batched reposDiscovered increment landed
+   * - visible on the scan detail page as reposProcessed transiently
+   * exceeding reposDiscovered. No progress emit here (would be one SSE
+   * event per repo); the caller's own batch-level emit still fires after
+   * its loop completes.
+   *
+   * `countsTowardAnalysis` (default true) controls whether this claim also
+   * bumps awaitingAnalysis - true for every normal caller, which always
+   * follows this with an enqueueRepositoryAnalysis job that will eventually
+   * call completeAnalysisUnit to decrement it back. Pass false for a
+   * discoveryOnly claim: no analysis job is ever enqueued for it, so
+   * incrementing awaitingAnalysis here would leave it permanently above
+   * zero and the scan would never finalize (tryFinalize requires both
+   * awaitingSearch AND awaitingAnalysis to reach 0). Increments
+   * reposPendingAnalysis instead, so the deferred count is still visible.
+   */
+  async recordRepositoryDiscovered(
+    scanJobId: string,
+    options: { countsTowardAnalysis?: boolean } = {},
+  ) {
+    const countsTowardAnalysis = options.countsTowardAnalysis !== false;
     await this.scanModel.findByIdAndUpdate(scanJobId, {
       $inc: {
-        awaitingSearch: -1,
-        awaitingAnalysis: analysisEnqueued,
-        reposDiscovered: analysisEnqueued,
-        reposFound: analysisEnqueued,
-        reposTotal: analysisEnqueued,
+        awaitingAnalysis: countsTowardAnalysis ? 1 : 0,
+        reposDiscovered: 1,
+        reposFound: 1,
+        reposTotal: 1,
+        reposPendingAnalysis: countsTowardAnalysis ? 0 : 1,
       },
+    });
+  }
+
+  async completeSearchJob(scanJobId: string, analysisEnqueued: number) {
+    await this.scanModel.findByIdAndUpdate(scanJobId, {
+      $inc: { awaitingSearch: -1 },
     });
     await this.progress.emitFromScanId(scanJobId, {
       type:
@@ -198,30 +242,20 @@ export class ScanStateService {
   }
 
   /**
-   * Record repos discovered via owner/fork expansion (not a search child job).
-   * Increments awaitingAnalysis so finalize waits for the new work.
+   * Reports repos discovered via owner/fork expansion (not a search child
+   * job) - counters themselves are already incremented per-repo by
+   * recordRepositoryDiscovered as each one is claimed, same as the search
+   * path; this just emits the batch-level progress message once the whole
+   * expansion loop finishes.
    */
   async recordExpansionEnqueued(scanJobId: string, analysisEnqueued: number) {
     if (analysisEnqueued <= 0) return null;
-    const job = await this.scanModel.findByIdAndUpdate(
-      scanJobId,
-      {
-        $inc: {
-          awaitingAnalysis: analysisEnqueued,
-          reposDiscovered: analysisEnqueued,
-          reposFound: analysisEnqueued,
-          reposTotal: analysisEnqueued,
-        },
-      },
-      { new: true },
-    );
     await this.progress.emitFromScanId(scanJobId, {
       type: ScanProgressEventType.REPOSITORIES_DISCOVERED,
       phase: ScanProgressPhase.ANALYZING,
       status: ScanJobStatus.RUNNING,
       message: `Expanded discovery by ${analysisEnqueued} related repositories`,
     });
-    return job;
   }
 
   /**
@@ -255,6 +289,7 @@ export class ScanStateService {
       findingsUnchanged?: number;
       findingsReopened?: number;
       findingsResolved?: number;
+      findingsHighRisk?: number;
       failedKey?: string;
       githubId?: number;
     },
@@ -289,6 +324,9 @@ export class ScanStateService {
     }
     if (opts.findingsResolved) {
       update.$inc.findingsResolved = opts.findingsResolved;
+    }
+    if (opts.findingsHighRisk) {
+      update.$inc.findingsHighRisk = opts.findingsHighRisk;
     }
     if (opts.failedKey) {
       update.$addToSet = {
@@ -445,7 +483,70 @@ export class ScanStateService {
         percent: 100,
       });
     }
+
+    // A keyword-watch toggle is meant to stay "on" until the user turns it
+    // off, not until it happens to run out of results - GitHub's index
+    // changes over time, so a keyword that found nothing new today might
+    // find something next week. Only fires for a clean, error-free
+    // COMPLETED finish (never for CANCELLED - handled by the early return
+    // above - or FAILED, which would just repeat the same failure forever).
+    if (job.status === ScanJobStatus.COMPLETED && !job.error) {
+      await this.maybeRestartKeywordWatch(job);
+    }
     return job;
+  }
+
+  /**
+   * Re-enqueues the same keyword-scoped discoveryOnly scan after a cooldown
+   * so it keeps effectively "running" (QUEUED, visible as active) until the
+   * user explicitly stops it via cancelScan - see finalize(). Reuses every
+   * option the original run had (dates, custom query overrides, maxRepos)
+   * and resumes from where its discovery cursor left off (continueDiscovery)
+   * instead of re-walking the same top results every cycle. Best-effort: a
+   * failure here (e.g. the brand was deleted in the meantime) just means
+   * this keyword quietly stops watching, not a crash.
+   */
+  private async maybeRestartKeywordWatch(job: ScanJobDocument) {
+    if (!job.scopeKeyword || !job.scopeBrandId || job.discoveryOnly !== true) {
+      return;
+    }
+    // A rotation-managed scan's "what runs next" is owned entirely by
+    // KeywordRotationService.advance (the next keyword in its own order,
+    // not this same keyword again) - restarting it here would race the
+    // rotation's own handoff and leave two competing scans for this brand.
+    if (job.rotationManaged) {
+      return;
+    }
+    const toDateString = (d?: Date) =>
+      d ? d.toISOString().slice(0, 10) : undefined;
+    const envOverride = Number(process.env.KEYWORD_WATCH_RESTART_DELAY_MS);
+    const delayMs =
+      envOverride > 0 ? envOverride : KEYWORD_WATCH_RESTART_DELAY_MS_DEFAULT;
+    try {
+      await this.scanQueue.enqueueManualScan(
+        String(job.workspaceId),
+        String(job.triggeredBy),
+        {
+          brandId: String(job.scopeBrandId),
+          keyword: job.scopeKeyword,
+          discoveryOnly: true,
+          maxRepos: job.maxRepos,
+          createdFrom: toDateString(job.createdFrom),
+          createdTo: toDateString(job.createdTo),
+          pushedFrom: toDateString(job.pushedFrom),
+          pushedTo: toDateString(job.pushedTo),
+          dateFilterMode: job.dateFilterMode,
+          customRepoQuery: job.customRepoQuery,
+          customCodeQuery: job.customCodeQuery,
+          continueDiscovery: true,
+          delayMs,
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Keyword watch auto-restart skipped for scan ${job._id} (keyword "${job.scopeKeyword}"): ${safeJobError(err)}`,
+      );
+    }
   }
 
   async emitRateLimitPause(scanJobId: string, until: number) {

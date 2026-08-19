@@ -97,6 +97,51 @@ describe('BrandsService', () => {
     expect(toggled.enabled).toBe(false);
   });
 
+  it('sets and updates trustedGithubOwners', async () => {
+    const created = await service.create(workspaceId, {
+      name: 'AngelOne',
+      aliases: ['angelone'],
+      trustedGithubOwners: ['angel-one-tech'],
+    });
+    expect(created.trustedGithubOwners).toEqual(['angel-one-tech']);
+
+    const updated = await service.update(workspaceId, String(created._id), {
+      trustedGithubOwners: ['angel-one-tech', 'angelone-official'],
+    });
+    expect(updated.trustedGithubOwners).toEqual([
+      'angel-one-tech',
+      'angelone-official',
+    ]);
+  });
+
+  it('defaults trustedGithubOwners to an empty array when not given', async () => {
+    const created = await service.create(workspaceId, { name: 'Acme' });
+    expect(created.trustedGithubOwners).toEqual([]);
+  });
+
+  it('normalizes pasted GitHub URLs down to the bare owner login', async () => {
+    const created = await service.create(workspaceId, {
+      name: 'AngelOne',
+      trustedGithubOwners: [
+        'https://github.com/angel-one',
+        'http://www.github.com/angel-one-tech/',
+        'github.com/angelone-official/some-repo',
+        '  already-bare  ',
+      ],
+    });
+    expect(created.trustedGithubOwners).toEqual([
+      'angel-one',
+      'angel-one-tech',
+      'angelone-official',
+      'already-bare',
+    ]);
+
+    const updated = await service.update(workspaceId, String(created._id), {
+      trustedGithubOwners: ['https://github.com/angel-one-updated'],
+    });
+    expect(updated.trustedGithubOwners).toEqual(['angel-one-updated']);
+  });
+
   it('throws when brand is missing', async () => {
     await expect(
       service.update(workspaceId, new Types.ObjectId().toHexString(), {

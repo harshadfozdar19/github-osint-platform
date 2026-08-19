@@ -5,6 +5,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity } from 'lucide-react';
 import { api, AuthResponse } from '@/lib/api';
+import { Alert, Button, Field, Input } from '@/components/ui';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -33,75 +34,59 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center px-4">
+    <div className="grid min-h-screen place-items-center bg-[var(--bg)] px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 text-[var(--accent)]">
-            <Activity className="h-6 w-6" aria-hidden />
-            <span className="text-xl font-semibold tracking-wide">OSINT Watch</span>
-          </div>
+          <Link href="/" className="inline-flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm">
+              <Activity className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="text-xl font-bold tracking-tight text-[var(--text)]">
+              OSINT Watch
+            </span>
+          </Link>
           <p className="mt-3 text-sm text-[var(--muted)]">Create an account.</p>
         </div>
 
         <form
           onSubmit={onSubmit}
-          className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)]/90 p-6 space-y-4"
+          className="space-y-4 rounded-xl border border-[var(--accent-border)]/50 bg-[var(--bg-elevated)] p-6 shadow-[var(--shadow-sm)]"
         >
-          <div>
-            <label htmlFor="name" className="block text-sm mb-1">
-              Name
-            </label>
-            <input
+          <Field label="Name">
+            <Input
               id="name"
               required
               minLength={2}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 outline-none focus:border-[var(--accent)]"
             />
-          </div>
-          <div>
-            <label htmlFor="email" className="block text-sm mb-1">
-              Email
-            </label>
-            <input
+          </Field>
+          <Field label="Email">
+            <Input
               id="email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 outline-none focus:border-[var(--accent)]"
             />
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-sm mb-1">
-              Password (min 8 characters)
-            </label>
-            <input
+          </Field>
+          <Field label="Password (min 8 characters)">
+            <Input
               id="password"
               type="password"
               required
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 outline-none focus:border-[var(--accent)]"
             />
-          </div>
-          {error ? (
-            <p className="text-sm text-[var(--danger)]" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-md bg-[var(--accent-dim)] hover:bg-[var(--accent-hover)] px-3 py-2 font-medium text-white disabled:opacity-60"
-          >
+          </Field>
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          <Button type="submit" loading={loading} className="w-full">
             {loading ? 'Creating account…' : 'Create account'}
-          </button>
+          </Button>
           <p className="text-center text-sm text-[var(--muted)]">
             Already registered?{' '}
-            <Link href="/login" className="text-[var(--accent)] hover:underline">
+            <Link href="/login" className="font-medium text-[var(--accent)] hover:underline">
               Sign in
             </Link>
           </p>

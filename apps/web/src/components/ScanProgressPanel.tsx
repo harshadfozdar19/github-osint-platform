@@ -1,6 +1,7 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Button, Card } from '@/components/ui';
 import { api, ScanJob } from '@/lib/api';
 import {
   ScanProgressEvent,
@@ -59,6 +60,7 @@ export function ScanProgressPanel({
         findingsUnchanged: next.counts.findingsUnchanged,
         findingsReopened: next.counts.findingsReopened,
         findingsResolved: next.counts.findingsResolved,
+        findingsHighRisk: next.counts.findingsHighRisk,
         cancelRequested:
           next.type === 'scan.cancelled' || next.phase === 'cancelled',
       });
@@ -140,10 +142,12 @@ export function ScanProgressPanel({
     reposSkipped: initialJob?.reposSkipped ?? 0,
     reposRescanned: initialJob?.reposRescanned ?? 0,
     reposResumed: initialJob?.reposResumed ?? 0,
+    reposPendingAnalysis: initialJob?.reposPendingAnalysis ?? 0,
     findingsNew: initialJob?.findingsNew ?? 0,
     findingsUnchanged: initialJob?.findingsUnchanged ?? 0,
     findingsReopened: initialJob?.findingsReopened ?? 0,
     findingsResolved: initialJob?.findingsResolved ?? 0,
+    findingsHighRisk: initialJob?.findingsHighRisk ?? 0,
   };
 
   const terminal =
@@ -170,7 +174,7 @@ export function ScanProgressPanel({
           : 'var(--text)';
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-5 space-y-4">
+    <Card className="space-y-4 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
@@ -200,15 +204,21 @@ export function ScanProgressPanel({
           <span>Progress</span>
           <span>{Math.round(percent)}%</span>
         </div>
-        <div className="h-2 overflow-hidden rounded bg-[var(--border)]">
+        <div className="h-2 overflow-hidden rounded-full bg-[var(--border)]">
           <div
-            className="h-full rounded bg-[var(--accent)] transition-[width] duration-500"
+            className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500 ease-out"
             style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
           />
         </div>
       </div>
 
       <p className="text-sm">{message}</p>
+
+      <HighRiskSummary
+        reposProcessed={counts.reposProcessed}
+        findingsHighRisk={counts.findingsHighRisk ?? 0}
+        internalAudit={!!initialJob?.internalAudit}
+      />
 
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Stat label="Discovered" value={counts.reposDiscovered} />
@@ -217,10 +227,21 @@ export function ScanProgressPanel({
         <Stat label="Rescanned" value={counts.reposRescanned ?? 0} />
         <Stat label="Resumed" value={counts.reposResumed ?? 0} />
         <Stat label="Failed" value={counts.reposFailed} />
+        {initialJob?.discoveryOnly || (counts.reposPendingAnalysis ?? 0) > 0 ? (
+          <Stat
+            label="Pending analysis"
+            value={counts.reposPendingAnalysis ?? 0}
+          />
+        ) : null}
         <Stat label="Findings new" value={counts.findingsNew ?? counts.findingsCreated} />
         <Stat
           label="Unchanged / reopened"
           value={(counts.findingsUnchanged ?? 0) + (counts.findingsReopened ?? 0)}
+        />
+        <Stat
+          label={initialJob?.internalAudit ? 'Leaking credentials' : 'Flagged high-risk'}
+          value={counts.findingsHighRisk ?? 0}
+          danger={(counts.findingsHighRisk ?? 0) > 0}
         />
       </div>
 
@@ -229,42 +250,99 @@ export function ScanProgressPanel({
       ) : null}
 
       {status === 'failed' && (event?.message || initialJob?.error) ? (
-        <p className="rounded border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-3 py-2 text-sm text-[var(--danger)]">
-          {event?.message || initialJob?.error}
-        </p>
+        <Alert tone="danger">{event?.message || initialJob?.error}</Alert>
       ) : null}
 
       <div className="flex flex-wrap gap-2">
         {canCancel ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-            className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg)] disabled:opacity-60"
-          >
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onCancel}>
             Cancel scan
-          </button>
+          </Button>
         ) : null}
         {canRetry ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onRetry}
-            className="rounded-md bg-[var(--accent-dim)] px-3 py-1.5 text-sm text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
-          >
+          <Button type="button" size="sm" disabled={busy} onClick={onRetry}>
             Retry scan
-          </button>
+          </Button>
         ) : null}
       </div>
+    </Card>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  danger,
+}: {
+  label: string;
+  value: number;
+  danger?: boolean;
+}) {
+  return (
+    <div
+      className="rounded border px-3 py-2"
+      style={
+        danger
+          ? {
+              borderColor: 'var(--danger-border-soft)',
+              background: 'var(--danger-soft)',
+            }
+          : undefined
+      }
+    >
+      <p className="text-xs text-[var(--muted)]">{label}</p>
+      <p
+        className="text-base font-medium"
+        style={danger ? { color: 'var(--danger)' } : undefined}
+      >
+        {value}
+      </p>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+/**
+ * The headline answer to "out of the repos we looked at, how many actually
+ * matter" - separate from the generic stat grid below since this is the
+ * number a reviewer cares about most and shouldn't have to hunt for it among
+ * eight other counters.
+ */
+function HighRiskSummary({
+  reposProcessed,
+  findingsHighRisk,
+  internalAudit,
+}: {
+  reposProcessed: number;
+  findingsHighRisk: number;
+  internalAudit: boolean;
+}) {
+  if (reposProcessed === 0) return null;
+  const flaggedLabel = internalAudit
+    ? findingsHighRisk === 1
+      ? 'repo is leaking a credential'
+      : 'repos are leaking credentials'
+    : findingsHighRisk === 1
+      ? 'repo looks like a real threat'
+      : 'repos look like a real threat';
   return (
-    <div className="rounded border border-[var(--border)] px-3 py-2">
-      <p className="text-xs text-[var(--muted)]">{label}</p>
-      <p className="text-base font-medium">{value}</p>
+    <div
+      className="rounded-lg border px-3 py-2 text-sm"
+      style={
+        findingsHighRisk > 0
+          ? { borderColor: 'var(--danger-border-soft)', background: 'var(--danger-soft)' }
+          : { borderColor: 'var(--border)' }
+      }
+    >
+      Scanned{' '}
+      <span className="font-medium">{reposProcessed}</span>{' '}
+      {reposProcessed === 1 ? 'repository' : 'repositories'} so far —{' '}
+      <span
+        className="font-semibold"
+        style={findingsHighRisk > 0 ? { color: 'var(--danger)' } : undefined}
+      >
+        {findingsHighRisk}
+      </span>{' '}
+      {flaggedLabel}.
     </div>
   );
 }
