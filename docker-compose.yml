@@ -15,14 +15,13 @@ services:
       MONGO_INITDB_DATABASE: github-osint
 
   redis:
-    image: redis:7-alpine
-    container_name: osint-redis
+    image: redis:7.0-alpine
+    container_name: github-osint-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: ["redis-server", "--appendonly", "yes"]
 
   # Optional: run API in Docker after building
   api:
@@ -68,3 +67,5 @@ services:
 volumes:
   mongo_data:
   redis_data:
+    external: true
+    name: github-osint-platform_redis-data
