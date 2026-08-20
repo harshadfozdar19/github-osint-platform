@@ -295,7 +295,8 @@ describe('GitHubSearchProcessor (mocked GitHub)', () => {
           {
             id: 301,
             full_name: 'zerodha-clone/old-repo-matched-by-name',
-            html_url: 'https://github.com/zerodha-clone/old-repo-matched-by-name',
+            html_url:
+              'https://github.com/zerodha-clone/old-repo-matched-by-name',
             description: null,
             stargazers_count: 0,
             forks_count: 0,
@@ -359,7 +360,8 @@ describe('GitHubSearchProcessor (mocked GitHub)', () => {
       data: {
         workspaceId,
         scanJobId,
-        query: 'zerodha (login OR otp) in:name,description created:2026-08-10..2026-08-10',
+        query:
+          'zerodha (login OR otp) in:name,description created:2026-08-10..2026-08-10',
         queryIndex: 0,
         maxRepos: 25,
         searchKind: 'repositories',
@@ -515,7 +517,8 @@ describe('GitHubSearchProcessor (mocked GitHub)', () => {
             pushed_at: '2026-08-10T00:00:00Z',
             owner: { login: 'Vineetok' },
             name: 'fintech_prim',
-            matchedPath: 'web-frontend-main/app/products/mutual-funds/components/TopPicks.ts',
+            matchedPath:
+              'web-frontend-main/app/products/mutual-funds/components/TopPicks.ts',
           },
         ],
       }),
@@ -533,7 +536,10 @@ describe('GitHubSearchProcessor (mocked GitHub)', () => {
       findById: jest.fn().mockReturnValue({
         lean: () => ({
           exec: () =>
-            Promise.resolve({ reposDiscovered: 0, scopeKeyword: 'motilal-oswal' }),
+            Promise.resolve({
+              reposDiscovered: 0,
+              scopeKeyword: 'motilal-oswal',
+            }),
         }),
       }),
       findByIdAndUpdate: jest.fn().mockResolvedValue({}),
@@ -686,7 +692,8 @@ describe('GitHubSearchProcessor (mocked GitHub)', () => {
         scanJobId,
         discoveredOnly: true,
         discoveryMatchedField: 'description',
-        discoveryMatchedText: 'Investment tracker mentioning Motilal Oswal funds',
+        discoveryMatchedText:
+          'Investment tracker mentioning Motilal Oswal funds',
         discoveryBrandId: scopeBrandId,
         discoveryKeyword: 'Motilal Oswal',
       }),
@@ -788,7 +795,7 @@ describe('GitHubSearchProcessor (mocked GitHub)', () => {
     );
   });
 
-  it("discoveryOnly: skips a repo already known workspace-wide (found by another scan, e.g. a concurrent keyword toggle) without claiming, upserting, or counting it", async () => {
+  it('discoveryOnly: skips a repo already known workspace-wide (found by another scan, e.g. a concurrent keyword toggle) without claiming, upserting, or counting it', async () => {
     const scanQueue = {
       enqueueRepositoryAnalysis: jest.fn().mockResolvedValue(undefined),
     };
@@ -2226,7 +2233,9 @@ describe('GitHubSearchProcessor oversized date-range query splitting', () => {
       (call) => (call[0] as { query: string }).query,
     );
     queries.forEach((q) => {
-      expect(q).toContain('zerodha (login OR otp) in:name,description created:');
+      expect(q).toContain(
+        'zerodha (login OR otp) in:name,description created:',
+      );
     });
 
     // The original (now-superseded) query's own cursor is still the one

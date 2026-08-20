@@ -14,9 +14,14 @@ This platform is that alarm bell. You tell it which companies/brands to watch an
 
 - **Watch your companies/brands** — add, edit, enable/disable them from the dashboard. No developer needed to add a new brand to monitor.
 - **Manage your own search keywords** — the words that make a match suspicious (login, wallet, phishing, secret, apk...) are fully editable from the UI, each with a category and priority. The system also auto-promotes new keywords on its own when a confirmed high-severity finding shows a pattern worth watching for.
-- **Run scans on demand** — start a scan for one specific brand, a raw custom GitHub query, or everything at once, and cap how many repositories it should check. Scans run in the background and can be cancelled or retried.
+- **Run scans on demand** — start a scan for one specific brand, a raw custom GitHub query, or everything at once, and cap how many repositories it should check. Scans run in the background and can be cancelled or retried. Discovery and content analysis can also be split into two deliberate steps: discover-only (save candidates cheaply, analyze nothing yet), then **Analyze discovered repos** to run real content analysis on that backlog, or **Re-analyze existing repos** to re-run detection on repos that were already analyzed — useful after adding a new keyword to a brand, so the updated keyword list gets checked against repos that were scanned before it existed.
+- **Run keyword scans on a schedule, unattended** — the sequential scheduler runs one keyword at a time, each for its own configured duration, then automatically pauses that keyword (turning its own toggle off) before handing off to the next — so a queue of keywords works through itself over hours without babysitting, and a finished keyword doesn't just loop forever eating quota. A "View keywords to start" preview shows exactly which keywords the next click will run before you commit, and "Start all keywords" is available separately for deliberately force-resuming everything at once.
 - **Search GitHub yourself** — a built-in search page lets anyone run an ad-hoc GitHub search, either by typing a query directly or by picking keywords from a list and clicking "Apply" to have a valid query built automatically — no need to learn GitHub's search syntax. Repos your workspace has already reviewed are hidden from new results by default (toggle "Include already-reviewed repos" to see them again), and repository search can be narrowed to a specific creation-date window.
 - **Show real evidence, safely** — every finding shows exactly what was found and where (file, line, matched text), so nobody has to just trust a score.
+- **Detect live deployments** — during deep analysis, the platform checks whether a repo has an actual live deployment (GitHub Deployments API, preferring the repo's own public `homepage` field over an auto-generated per-deployment URL, since those are frequently gated behind the hosting provider's own SSO wall) — so a finding that's just source code can be told apart from one that's an actively-running phishing site.
+- **Track contributors across repos** — a dedicated Contributors page rolls up every contributor across every discovered repository, how many repos each one touches, and which companies those repos belong to — surfacing the same operator behind several different clone repos.
+- **Classify findings your own way** — beyond the open/acknowledged/resolved/false-positive triage status, each finding can independently be tagged **Watchlist** (yellow), **Ignorelist** (grey), **Allowlist** (green), or **Blocklist** (red) — filterable, and the whole row is tinted its tag's color so a classified finding is recognizable at a glance while scanning a long list.
+- **See what changed recently** — a Recent Activity feed lists repos pushed to on GitHub recently and findings that are new or came back from resolved, so you can tell what's actually moving without re-reading the whole findings list.
 - **Alert on the important stuff** — critical and high-risk findings automatically raise an in-app alert so nothing serious gets buried in a long list.
 - **Keep teams separate** — more than one team/company can use this at once. Each team ("workspace") only ever sees its own brands, keywords, scans, and findings — never anyone else's.
 - **Bring your own GitHub access** — each team can plug in its own GitHub access token (encrypted, never readable again by anyone — not even by looking directly at the database) instead of sharing one token with every other team on the platform.
@@ -158,11 +163,14 @@ npm run seed   # seed manually instead of on boot
 ## Walking through the product, page by page
 
 - **Dashboard** — at-a-glance view: findings by severity, recent critical hits, GitHub API quota health.
+- **Scans** — start a scan scoped to one brand, a custom GitHub query, or everything; set a cap on how many repositories it should check; watch live progress; cancel or retry a scan; run the sequential keyword scheduler (queue keywords, each with its own duration, and let them work through themselves unattended). "Analyze discovered repos" and "Re-analyze existing repos" replay content analysis over the discovery backlog without a new GitHub search — the latter specifically for re-checking repos already analyzed once, after a brand's own keyword list changed.
+- **Repositories** — every repository a keyword/GitHub search has discovered, analyzed or still pending, with filters for company, match location, language, status, and every relevant date; a "Branches" action clones and scans a specific non-default branch on demand (GitHub's search index only ever covers the default branch).
+- **Recent Activity** — a dedicated feed of repos recently pushed to on GitHub and findings that are new or reopened, with a time-window and company filter, so recent movement doesn't require re-scanning the whole findings list.
+- **Findings** — every match with full evidence: which repository, which file, which line, what was matched, the risk score and its breakdown, a triage status (acknowledged / resolved / false positive), an independent watchlist/ignorelist/allowlist/blocklist classification (color-coded, row-tinted, filterable), and — when detected — a live deployment link.
+- **Contributors** — every contributor seen across every discovered repository, rolled up with how many repos each one touches and which companies those repos belong to, with company and minimum-repo-count filters.
 - **Companies** (brands) — add, edit, enable/disable the companies/brands you want watched. Fully manageable from the UI, nothing hardcoded.
 - **Keywords** — add, edit, enable/disable the suspicious words that combine with a brand name to trigger a match (category + priority per keyword).
-- **Scans** — start a scan scoped to one brand, a custom GitHub query, or everything; set a cap on how many repositories it should check; watch live progress; cancel or retry a scan.
 - **Custom GitHub search** — run an ad-hoc GitHub search directly. Either type a raw GitHub query, or pick keywords from your list and click "Apply to query" to have a valid query built for you automatically.
-- **Findings** — every match with full evidence: which repository, which file, which line, what was matched, the risk score and its breakdown, and a triage status you can set (acknowledged / resolved / false positive).
 - **Alerts** — a focused feed of just the Critical/High findings so the important stuff never gets lost in a long list.
 - **Settings** — set or remove this team's own GitHub access token, so its scans don't compete with other teams for the same shared quota. Tokens are encrypted at rest and the raw value is never shown again, only a masked "last 4 characters" confirmation.
 
@@ -177,6 +185,8 @@ Scans don't run inside the HTTP request. `POST /api/v1/scans/manual` returns **2
 | `repository-analysis` | Safe metadata/README/small-file fetch |
 | `detection-processing` | Rule engine + risk score persistence |
 | `alert-dispatch` | Critical/High in-app alerts |
+| `keyword-rotation` | Sequential scheduler's delayed "slot elapsed" handoff timer — see below |
+| `branch-analysis` | On-demand clone + scan of one specific non-default branch |
 
 A scan can optionally be scoped and capped:
 
@@ -203,7 +213,7 @@ POST /api/v1/scans/manual
 
 ### Worker tuning (env)
 
-All 5 queues run as always-on workers, so their idle-maintenance chatter (stalled-job scans, empty-queue re-polling) is constant background Redis traffic independent of whether any scan is running — the dominant source of command volume on a metered/free Redis plan (e.g. Upstash's free tier). At BullMQ's defaults (30s stalled check, 5s idle re-poll) this alone costs roughly **3 million commands/month** from an app doing nothing, several times over a typical free-tier cap. Two env vars widen both:
+All 7 queues run as always-on workers, so their idle-maintenance chatter (stalled-job scans, empty-queue re-polling) is constant background Redis traffic independent of whether any scan is running — the dominant source of command volume on a metered/free Redis plan (e.g. Upstash's free tier). At BullMQ's defaults (30s stalled check, 5s idle re-poll) this alone costs roughly **3 million commands/month** from an app doing nothing, several times over a typical free-tier cap. Two env vars widen both:
 
 ```env
 QUEUE_STALLED_INTERVAL_MS=300000   # how often each worker scans for stalled (crashed) jobs
@@ -216,6 +226,19 @@ Scan statuses: `queued`, `running`, `completed`, `partially_completed`, `failed`
 
 Also available: `POST /scans/:id/cancel`, `POST /scans/:id/retry` (retry uses `failed_only` mode).
 
+### Sequential keyword scheduler
+
+A workspace-wide, ordered queue of `(company, keyword, duration)` slots that runs **exactly one keyword at a time**, each getting the workspace's whole GitHub token quota for its own duration instead of splitting it across everything running concurrently, then hands off to the next queued keyword. The queue can mix keywords from several different companies.
+
+When a keyword's slot duration elapses, that keyword is **paused** (its own toggle turns off) before the handoff to the next slot — a duration is a one-shot "run for this long, then stop," not an invitation to keep re-running the same keyword forever every time the rotation laps back around. Resuming it later (the same per-keyword toggle) starts another timed run. Once every queued keyword ends up paused, the whole scheduler disables itself rather than spinning with nothing left to do.
+
+- **Start the scan** — starts every already-*unpaused* configured keyword plus anything just added, previewable first via "View keywords to start" so you know exactly what's about to run before committing.
+- **Start all keywords** — force-resumes the *entire* queue, paused or not, in one action.
+- Per-keyword controls: pause/resume individually without touching the rest of the queue, choose which GitHub search kind(s) that keyword's turn runs (repo search / code search / both), and choose whether it resumes its own discovery pagination cursor or restarts every query at page 1 each turn.
+- If a keyword's scan is still waiting out a GitHub rate-limit pause when its slot would otherwise end, the scheduler extends that slot (bounded: a few extensions, capped duration each) instead of cutting it off having made zero progress — but a persistently-blocked keyword still eventually hands off rather than monopolizing the whole queue.
+
+Endpoints: `GET/POST /scans/keyword-rotation`, `/keyword-rotation/start`, `/stop`, `/add` (append to an already-running queue without touching the current turn), `/pause`, `/resume`, `/remove`, `/search-scope`, `/continue-discovery`.
+
 ### Incremental, checkpointed scanning
 
 Scans are **incremental by default**. Identity is always the GitHub repository **numeric ID** (names/renames are display-only).
@@ -227,6 +250,8 @@ Each repository tracks: `githubId`, `updated_at` / `pushed_at`, default branch, 
 | `incremental` (default) | Skip content analysis when SHA + ruleset match a prior success |
 | `full` | Force content analysis for every discovered repo |
 | `failed_only` | Only re-analyze repos with `lastProcessingFailed` |
+| `analyze_pending` | Skip search entirely; run real content analysis on every repo a prior discover-only scan found but never analyzed. Workspace-wide by default, or narrowed with `brandId` / `discoveredFrom` / `discoveredTo` / `maxRepos` |
+| `reanalyze_existing` | Skip search entirely; force-re-analyze repos that were **already** analyzed, against the brand's *current* keyword list — for when a keyword is added after those repos were last checked. Same optional `brandId` / `discoveredFrom` / `discoveredTo` / `maxRepos` scoping as `analyze_pending`; always bypasses the incremental "unchanged, skip" decision, since the point is re-checking content against new keywords, not against new code |
 
 Rescan also happens when: content SHA changed, ruleset version changed, previous processing failed, no successful scan exists, or the client sets `forceFullScan: true`.
 
@@ -313,17 +338,23 @@ All routes are prefixed with `/api/v1` and documented in Swagger.
 | POST | `/auth/login` | No | Login |
 | GET | `/auth/me` | Yes | Current user |
 | GET | `/dashboard/summary` | Yes | Overview stats |
-| GET | `/findings` | Yes | Filtered findings (incl. `status`) |
+| GET | `/findings` | Yes | Filtered findings (incl. `status`, `listStatus`) |
 | GET | `/findings/:id` | Yes | Finding detail |
 | PATCH | `/findings/:id/status` | Yes | Triage status + note |
+| PATCH | `/findings/:id/list-status` | Yes | Watchlist / ignorelist / allowlist / blocklist tag — independent of triage status |
 | GET | `/scans` | Yes | Scan history |
-| POST | `/scans/manual` | Yes | Enqueue a scan (202); body `{ mode?, forceFullScan?, brandId?, customQuery?, searchKind?, maxRepos?, createdFrom?, createdTo? }` |
+| POST | `/scans/manual` | Yes | Enqueue a scan (202); body `{ mode?, forceFullScan?, brandId?, customQuery?, searchKind?, maxRepos?, createdFrom?, createdTo?, discoveredFrom?, discoveredTo? }` |
 | GET | `/scans/search` | Yes | Ad-hoc GitHub repo/code search through the managed client; query params `q, page, type, createdFrom?, createdTo?, includeSeen?` |
 | GET | `/scans/:id` | Yes | Scan job detail |
 | GET | `/scans/:id/progress` | Yes | Poll latest progress |
 | GET | `/scans/:id/events` | Yes | SSE progress stream |
 | POST | `/scans/:id/cancel` | Yes | Cancel queued/running scan |
 | POST | `/scans/:id/retry` | Yes | Retry failed/partial scan (202) |
+| GET | `/scans/pending-analysis-count` | Yes | Live count for "Analyze discovered repos" (`mode=analyze_pending`); same optional `brandId`/`discoveredFrom`/`discoveredTo` scoping |
+| GET | `/scans/analyzed-count` | Yes | Live count for "Re-analyze existing repos" (`mode=reanalyze_existing`) |
+| GET | `/scans/repositories/recent-changes` | Yes | Repos recently pushed to on GitHub + findings that are new/reopened; `days`, `limit`, `brandId` |
+| GET/POST | `/scans/keyword-rotation`, `/keyword-rotation/start`, `/stop`, `/add`, `/pause`, `/resume`, `/remove`, `/search-scope`, `/continue-discovery` | Yes | Sequential keyword scheduler — see above |
+| GET | `/contributors` | Yes | Cross-repo contributor rollup; `search`, `companyId`, `minRepositories`, `sortBy`, pagination |
 | GET | `/brands` (alias: `/companies`) | Yes | Monitored companies/brands |
 | POST | `/brands` | Yes | Add a company/brand |
 | PATCH | `/brands/:id` | Yes | Edit / enable / disable a brand |
@@ -357,7 +388,9 @@ Modular rules live under `apps/api/src/detection/rules/` and are independent of 
 
 Discovery is multi-channel (not keyword-only): query families (apk / phishing / impersonation), typo-squat name checks, brand-agnostic filename/secret code search, then owner fan-out + fork walking from Critical/High hits. Repository analysis uses recursive git trees and prioritizes `.env` / credential paths.
 
-**Clone-based scanning** (`ENABLE_CLONE_SCAN`, **on by default**) shallow-clones eligible repos over git's own transport instead of fetching files one-by-one through the REST API, and scans the full working tree locally (skipping `node_modules`, `dist`, `vendor`, and similar directories). Two independent wins: full-repo coverage instead of a bounded priority-file list, and it isn't subject to the REST rate limit *or* the Redis-backed rate-limit/concurrency bookkeeping every REST call goes through — which is what actually keeps a large scan (hundreds of repos) from burning through a metered Redis plan's monthly command budget. It fails closed: any problem (git unavailable, clone timeout, repo over `CLONE_SCAN_MAX_REPO_SIZE_KB`) just falls back to the REST-based fetch (`SCAN_MAX_FILES_PER_REPO`, default 12 files/repo) with no other change in behavior, so it's safe to leave on, and can be disabled with `ENABLE_CLONE_SCAN=false` at any time.
+**Clone-based scanning** (`ENABLE_CLONE_SCAN`, **on by default**) shallow-clones eligible repos over git's own transport instead of fetching files one-by-one through the REST API, and scans the full working tree locally (skipping `node_modules`, `dist`, `vendor`, and similar directories). Two independent wins: full-repo coverage instead of a bounded priority-file list, and it isn't subject to the REST rate limit *or* the Redis-backed rate-limit/concurrency bookkeeping every REST call goes through — which is what actually keeps a large scan (hundreds of repos) from burning through a metered Redis plan's monthly command budget. It fails closed: any problem (git unavailable, clone timeout, repo over `CLONE_SCAN_MAX_REPO_SIZE_KB`) just falls back to the REST-based fetch (`SCAN_MAX_FILES_PER_REPO`, default 12 files/repo) with no other change in behavior, so it's safe to leave on, and can be disabled with `ENABLE_CLONE_SCAN=false` at any time. The temp directory a clone is checked out into is always removed afterward, retrying past a transient Windows file-lock race instead of silently leaving orphaned checkouts on disk.
+
+**Deployment detection and contributor tracking** run during deep analysis alongside detection: the GitHub Deployments API is checked for a live `environment_url`, preferring the repo's own public `homepage` field over the raw per-deployment URL when both exist (an auto-generated deployment URL for a team-owned project is frequently gated behind the hosting provider's own SSO/Deployment Protection, which a public `homepage` isn't); repository contributors are recorded and cross-referenced against every other repo in the workspace, so the same operator behind several differently-named clone repos becomes visible instead of looking like unrelated one-off incidents.
 
 Two feedback mechanisms close the loop from what's actually found back into future scans:
 - **Keyword auto-promotion** (`AUTO_PROMOTE_KEYWORDS`, on by default): a Critical/High finding checks the repo's name/description/topics against the curated keyword universe and auto-enables any matching term the workspace hasn't turned on yet, so future query generation organically expands from confirmed threats instead of only from queries picked in advance.
@@ -373,6 +406,8 @@ Risk score **0–100** with stored breakdown:
 | 0–39 | Low |
 
 Critical and High findings create **in-app alerts**. Findings can be triaged (`open` / `acknowledged` / `false_positive` / `resolved`) with notes. `resolved` findings **reopen** automatically if the same fingerprint is seen again (it was a real issue that came back); `false_positive` findings do **not** — that's a human verdict that the pattern isn't a threat, and re-flagging it on every rescan would just be triage noise.
+
+Independent of that workflow status, every finding can also carry a **watchlist / ignorelist / allowlist / blocklist** classification tag (`none` by default) — a separate axis answering "how do we feel about this going forward" rather than "where is this in triage." A finding can be `resolved` *and* `blocklist`ed at the same time; they track different questions and are filterable/settable independently on the Findings page.
 
 ## Scripts
 
@@ -410,7 +445,7 @@ API unit tests cover authentication flows, multi-tenancy/membership enforcement,
 ## Known limitations
 
 - A workspace has exactly one member (its owner) by design — there's no invite/team flow, so it can't be shared with teammates today.
-- Scans are entirely on-demand — there is no automatic/background scheduling; someone (or an external scheduler hitting the API) has to start each scan.
+- Every scan still has to be started deliberately — there is no cron/external trigger. The sequential keyword scheduler runs unattended *after* it's started (working through a queued list of keywords over hours, each for its own duration), but starting it in the first place is still a manual action, and it only keeps running for as long as the API process itself stays up.
 
 ## Assignment PDF
 

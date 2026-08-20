@@ -455,7 +455,11 @@ describe('GitHubService.getLatestDeployment', () => {
   function buildHttp(overrides: {
     homepage?: string | null;
     deployment?: { id?: number; environment?: string } | null;
-    status?: { state?: string; environment_url?: string; created_at?: string } | null;
+    status?: {
+      state?: string;
+      environment_url?: string;
+      created_at?: string;
+    } | null;
   }) {
     return {
       request: jest.fn().mockImplementation((_method: string, path: string) => {

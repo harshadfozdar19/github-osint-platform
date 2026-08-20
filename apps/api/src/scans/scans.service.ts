@@ -192,6 +192,17 @@ export class ScansService {
     return this.incremental.countPendingAnalysis(workspaceId, options);
   }
 
+  countAnalyzed(
+    workspaceId: string,
+    options: {
+      brandId?: string;
+      discoveredFrom?: Date;
+      discoveredTo?: Date;
+    } = {},
+  ): Promise<number> {
+    return this.incremental.countAnalyzed(workspaceId, options);
+  }
+
   /**
    * Every repository this workspace has discovered (whether or not it's
    * been content-analyzed yet) - the browsable counterpart to
@@ -365,15 +376,19 @@ export class ScansService {
    */
   async getRecentChanges(
     workspaceId: string,
-    options: { days?: number; limit?: number } = {},
+    options: { days?: number; limit?: number; brandId?: string } = {},
   ) {
     const days = options.days && options.days > 0 ? options.days : 7;
     const limit = Math.min(
       options.limit && options.limit > 0 ? options.limit : 8,
-      50,
+      200,
     );
     const ws = new Types.ObjectId(workspaceId);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const brand =
+      options.brandId && Types.ObjectId.isValid(options.brandId)
+        ? new Types.ObjectId(options.brandId)
+        : undefined;
 
     const [recentPushes, recentFindingChanges] = await Promise.all([
       this.repoModel
@@ -381,6 +396,7 @@ export class ScansService {
           workspaceId: ws,
           origin: 'external',
           githubPushedAt: { $gte: since },
+          ...(brand ? { discoveryBrandId: brand } : {}),
         })
         .sort({ githubPushedAt: -1 })
         .limit(limit)
@@ -395,6 +411,7 @@ export class ScansService {
             $in: [FindingChangeType.NEW, FindingChangeType.REOPENED],
           },
           lastSeenAt: { $gte: since },
+          ...(brand ? { brandId: brand } : {}),
         })
         .sort({ lastSeenAt: -1 })
         .limit(limit)
@@ -511,7 +528,8 @@ export class ScansService {
         // rescan (see the matchedBrand/matchKeyword comment further down).
         ...repos
           .map(
-            (r) => (r as { discoveryBrandId?: Types.ObjectId }).discoveryBrandId,
+            (r) =>
+              (r as { discoveryBrandId?: Types.ObjectId }).discoveryBrandId,
           )
           .filter(Boolean)
           .map(String),
@@ -570,9 +588,8 @@ export class ScansService {
       // unrelated scan happened to run against the same repo afterward.
       // Falls back to the scanJob join only for older records written
       // before discoveryBrandId/discoveryKeyword existed.
-      const discoveryBrandId = (
-        repo as { discoveryBrandId?: Types.ObjectId }
-      ).discoveryBrandId;
+      const discoveryBrandId = (repo as { discoveryBrandId?: Types.ObjectId })
+        .discoveryBrandId;
       const matchedBrand = discoveryBrandId
         ? brandNameById.get(String(discoveryBrandId))
         : scanJob?.scopeBrandId

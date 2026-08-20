@@ -432,8 +432,13 @@ export class ScanPipelineService {
       stars: item.stargazers_count,
       forks: item.forks_count,
       isFork: item.fork,
-      githubCreatedAt: new Date(item.created_at),
-      githubPushedAt: new Date(item.pushed_at),
+      // `new Date(undefined)` is an Invalid Date - a truthy object that
+      // silently defeats every `if (ctx.githubCreatedAt)` age-based guard
+      // downstream (risk-scoring, threat rules) instead of being skipped as
+      // "unknown," so an absent value must stay `undefined`, never get
+      // wrapped in Date() regardless.
+      githubCreatedAt: item.created_at ? new Date(item.created_at) : undefined,
+      githubPushedAt: item.pushed_at ? new Date(item.pushed_at) : undefined,
       filePaths,
       readmeText,
       readmePath,
@@ -625,13 +630,22 @@ export class ScanPipelineService {
       stars: item.stargazers_count,
       forks: item.forks_count,
       isFork: item.fork,
-      githubCreatedAt: new Date(item.created_at),
-      githubUpdatedAt: item.updated_at
-        ? new Date(item.updated_at)
-        : new Date(item.pushed_at),
-      githubPushedAt: new Date(item.pushed_at),
       isDemo: false,
     };
+    // Omitted entirely (not set to an Invalid Date) when GitHub genuinely
+    // didn't give us a value - a code-search discovery's embedded repo
+    // object never includes these (see GitHubRepoSearchItem.created_at);
+    // the discovery processor already tries a direct fetch to backfill
+    // created_at/pushed_at before this runs, but that can still come up
+    // empty. Leaving the key out keeps a real value from an earlier write
+    // intact instead of clobbering it with nothing on a later re-discovery.
+    if (item.created_at) update.githubCreatedAt = new Date(item.created_at);
+    if (item.updated_at) {
+      update.githubUpdatedAt = new Date(item.updated_at);
+    } else if (item.pushed_at) {
+      update.githubUpdatedAt = new Date(item.pushed_at);
+    }
+    if (item.pushed_at) update.githubPushedAt = new Date(item.pushed_at);
     if (extras.discoveredOnly) {
       update.pendingAnalysis = true;
       // Cleared (not just left unset) whenever this discovery call has no
@@ -865,7 +879,11 @@ export class ScanPipelineService {
     owner: string,
     fullName: string,
     deployment: RepositoryDeployment | null,
-    contributors: Array<{ login: string; avatarUrl?: string; contributions: number }>,
+    contributors: Array<{
+      login: string;
+      avatarUrl?: string;
+      contributions: number;
+    }>,
   ): Promise<void> {
     await this.repoModel.updateOne(
       { _id: repositoryId },

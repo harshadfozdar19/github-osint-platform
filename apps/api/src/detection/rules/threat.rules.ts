@@ -107,9 +107,7 @@ function brandPresent(ctx: RepoAnalysisContext, blob: string): string | null {
  * fused token with the underscore).
  */
 function matchesWholeTerm(haystackLower: string, term: string): boolean {
-  const escaped = term
-    .toLowerCase()
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(
     haystackLower,
   );
@@ -405,7 +403,8 @@ export const suspiciousOwnerAccountRule: DetectionRule = {
       ? (Date.now() - ctx.ownerAccountCreatedAt.getTime()) /
         (1000 * 60 * 60 * 24)
       : undefined;
-    const newAccount = ageDays !== undefined && ageDays <= NEW_ACCOUNT_MAX_AGE_DAYS;
+    const newAccount =
+      ageDays !== undefined && ageDays <= NEW_ACCOUNT_MAX_AGE_DAYS;
     const emptyProfile =
       (ctx.ownerFollowers ?? Infinity) <= EMPTY_PROFILE_MAX_FOLLOWERS &&
       (ctx.ownerPublicRepos ?? Infinity) <= EMPTY_PROFILE_MAX_REPOS;

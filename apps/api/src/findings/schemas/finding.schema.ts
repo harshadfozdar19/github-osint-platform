@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import {
   FindingStatus,
+  FindingListStatus,
   Severity,
   ThreatCategory,
   FindingChangeType,
@@ -117,6 +118,15 @@ export class Finding {
   })
   status!: FindingStatus;
 
+  /** Analyst classification tag (watchlist/ignorelist/allowlist/blocklist) - see FindingListStatus. */
+  @Prop({
+    type: String,
+    default: FindingListStatus.NONE,
+    enum: FindingListStatus,
+    index: true,
+  })
+  listStatus!: FindingListStatus;
+
   /** How this finding changed on the most recent scan that touched it */
   @Prop({
     type: String,
@@ -181,3 +191,4 @@ FindingSchema.index({ workspaceId: 1, createdAt: -1 });
 FindingSchema.index({ workspaceId: 1, severity: 1, riskScore: -1 });
 FindingSchema.index({ workspaceId: 1, brandName: 1 });
 FindingSchema.index({ workspaceId: 1, status: 1, lastSeenAt: -1 });
+FindingSchema.index({ workspaceId: 1, listStatus: 1 });

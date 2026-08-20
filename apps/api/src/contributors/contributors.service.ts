@@ -167,9 +167,7 @@ export class ContributorsService {
         totalRepositories: r.totalRepositories,
         companies: [
           ...new Set(
-            repositories
-              .map((x) => x.company)
-              .filter((c): c is string => !!c),
+            repositories.map((x) => x.company).filter((c): c is string => !!c),
           ),
         ],
         repositories,

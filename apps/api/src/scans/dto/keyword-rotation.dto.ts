@@ -17,7 +17,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class KeywordRotationSlotDto {
-  @ApiProperty({ description: "The company this keyword belongs to - a queue can mix several companies' keywords." })
+  @ApiProperty({
+    description:
+      "The company this keyword belongs to - a queue can mix several companies' keywords.",
+  })
   @IsMongoId()
   brandId!: string;
 
@@ -27,7 +30,8 @@ export class KeywordRotationSlotDto {
 
   @ApiProperty({
     example: 300_000,
-    description: "This keyword's own turn length in milliseconds (hh:mm:ss, converted client-side) - between 1s and 24h.",
+    description:
+      "This keyword's own turn length in milliseconds (hh:mm:ss, converted client-side) - between 1s and 24h.",
   })
   @IsInt()
   @Min(1_000)
@@ -52,6 +56,15 @@ export class KeywordRotationSlotDto {
   @IsOptional()
   @IsBoolean()
   continueDiscovery?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Whether this keyword should stay paused after this start/add call, instead of running. Start/add REPLACE-or-append the whole slot list, so a slot omitted here isn't just skipped - it's dropped from the queue entirely; passing paused:true is how an already-paused keyword survives a start call without being force-resumed.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  paused?: boolean;
 }
 
 export class StartKeywordRotationDto {
@@ -117,7 +130,10 @@ export class KeywordRotationSlotRefDto {
   @IsMongoId()
   brandId!: string;
 
-  @ApiProperty({ example: 'motilal oswal', description: 'The exact keyword, as queued' })
+  @ApiProperty({
+    example: 'motilal oswal',
+    description: 'The exact keyword, as queued',
+  })
   @IsString()
   keyword!: string;
 }

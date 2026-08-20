@@ -19,7 +19,7 @@ export class ManualScanDto {
     enum: ScanMode,
     default: ScanMode.INCREMENTAL,
     description:
-      'incremental (default) skips unchanged repos; full forces content analysis; failed_only retries previously failed githubIds; analyze_pending runs content analysis on every repo a prior discoveryOnly scan found and saved but never analyzed - workspace-wide by default, or narrowed with brandId and/or discoveredFrom/discoveredTo and/or maxRepos (customQuery is still ignored - there is no search to scope by query text in this mode)',
+      "incremental (default) skips unchanged repos; full forces content analysis; failed_only retries previously failed githubIds; analyze_pending runs content analysis on every repo a prior discoveryOnly scan found and saved but never analyzed; reanalyze_existing re-runs content analysis on repos that were ALREADY analyzed (for when a brand's keyword list changed since) - both analyze_pending and reanalyze_existing are workspace-wide by default, or narrowed with brandId and/or discoveredFrom/discoveredTo and/or maxRepos (customQuery is still ignored for both - there is no search to scope by query text in either mode)",
   })
   @IsOptional()
   @IsEnum(ScanMode)
@@ -89,7 +89,7 @@ export class ManualScanDto {
   @ApiPropertyOptional({
     example: '"angel one" "otp bypass"',
     description:
-      "User-edited override for the code-search query keyword would otherwise auto-generate. Requires keyword; ignored without it.",
+      'User-edited override for the code-search query keyword would otherwise auto-generate. Requires keyword; ignored without it.',
   })
   @IsOptional()
   @IsString()
@@ -181,7 +181,7 @@ export class ManualScanDto {
   @ApiPropertyOptional({
     example: '2026-07-31',
     description:
-      'mode=analyze_pending only: only analyze pending repos THIS WORKSPACE discovered on/after this date (YYYY-MM-DD) - Repository.createdAt, not any GitHub timestamp. Ignored for every other mode.',
+      'mode=analyze_pending/reanalyze_existing only: only process repos THIS WORKSPACE discovered on/after this date (YYYY-MM-DD) - Repository.createdAt, not any GitHub timestamp. Ignored for every other mode.',
   })
   @IsOptional()
   @IsDateString()
@@ -190,7 +190,7 @@ export class ManualScanDto {
   @ApiPropertyOptional({
     example: '2026-08-02',
     description:
-      'mode=analyze_pending only: only analyze pending repos THIS WORKSPACE discovered on/before this date (YYYY-MM-DD). Ignored for every other mode.',
+      'mode=analyze_pending/reanalyze_existing only: only process repos THIS WORKSPACE discovered on/before this date (YYYY-MM-DD). Ignored for every other mode.',
   })
   @IsOptional()
   @IsDateString()

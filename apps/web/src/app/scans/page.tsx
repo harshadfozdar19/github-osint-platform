@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Globe, Lock } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -15,6 +15,7 @@ import {
   ErrorState,
   Field,
   Input,
+  Modal,
   Select,
   TableSkeleton,
 } from '@/components/ui';
@@ -23,13 +24,20 @@ import { KeywordScheduleQueue } from '@/components/KeywordScheduleQueue';
 import { api, Brand, KeywordRotationSlot, Paginated, ScanJob } from '@/lib/api';
 import { formatDateTime } from '@/lib/date';
 
-type ScanModeOption = 'incremental' | 'full' | 'failed_only' | 'analyze_pending';
+type ScanModeOption =
+  | 'incremental'
+  | 'full'
+  | 'failed_only'
+  | 'analyze_pending'
+  | 'reanalyze_existing';
 /** External-scan scope: how to find candidate repos. Internal audits skip this entirely - they always target one brand's own accounts. */
 type ExternalScopeOption = 'all' | 'brand' | 'query';
 /** The primary choice this whole page exists to make explicit - see the two buttons below. `null` = not yet chosen. */
 type ScanKind = 'internal' | 'external' | null;
 
 const ACTIVE_STATUSES = ['queued', 'running'];
+/** Scoping keywords beyond this length get truncated with a click-to-expand modal - see ScanTable. */
+const KEYWORD_PREVIEW_LEN = 24;
 
 function ScanStatusBadge({ status }: { status: string }) {
   const tone =
@@ -59,21 +67,30 @@ function ScanTable({
   cancellingId: string | null;
   onCancel: (id: string) => void;
 }) {
+  // Some scoping keywords are full free-text search queries rather than
+  // short tags - truncated inline (see KEYWORD_PREVIEW_LEN) with a click to
+  // reveal the rest, instead of letting a long one wrap and blow out the
+  // row height for every column in that row.
+  const [expandedKeyword, setExpandedKeyword] = useState<{
+    company: string;
+    text: string;
+  } | null>(null);
+
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--accent-border)]/50 bg-[var(--bg-elevated)] shadow-[var(--shadow-sm)]">
-      <table className="min-w-[1000px] w-full text-sm">
+      <table className="w-full table-fixed text-xs sm:text-sm">
         <thead className="bg-[var(--bg-subtle)] text-left text-[var(--muted)]">
           <tr>
-            <th className="px-4 py-3">Type</th>
-            <th className="px-4 py-3">Company / Keyword</th>
-            <th className="px-4 py-3">Mode</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Repos</th>
-            <th className="px-4 py-3">Skip / Rescan</th>
-            <th className="px-4 py-3">Findings</th>
-            <th className="px-4 py-3">High-risk</th>
-            <th className="px-4 py-3">When</th>
-            <th className="px-4 py-3">Detail</th>
+            <th className="w-[9%] px-2 py-2.5 sm:px-3">Type</th>
+            <th className="w-[17%] px-2 py-2.5 sm:px-3">Company / Keyword</th>
+            <th className="w-[9%] px-2 py-2.5 sm:px-3">Mode</th>
+            <th className="w-[8%] px-2 py-2.5 sm:px-3">Status</th>
+            <th className="w-[13%] px-2 py-2.5 sm:px-3">Repos</th>
+            <th className="w-[15%] px-2 py-2.5 sm:px-3">Skip / Rescan</th>
+            <th className="w-[8%] px-2 py-2.5 sm:px-3">Findings</th>
+            <th className="w-[7%] px-2 py-2.5 sm:px-3">High-risk</th>
+            <th className="w-[9%] px-2 py-2.5 sm:px-3">When</th>
+            <th className="w-[9%] px-2 py-2.5 sm:px-3">Detail</th>
           </tr>
         </thead>
         <tbody>
@@ -82,7 +99,7 @@ function ScanTable({
               key={s._id}
               className="border-t border-[var(--border)] transition-colors duration-150 hover:bg-[var(--bg-subtle)]"
             >
-              <td className="px-4 py-3 capitalize">
+              <td className="break-words px-2 py-2.5 capitalize sm:px-3">
                 {s.type}
                 {s.internalAudit ? (
                   <Badge tone="danger" className="ml-1.5 normal-case">
@@ -103,24 +120,41 @@ function ScanTable({
                   </span>
                 ) : null}
               </td>
-              <td className="px-4 py-3">
+              <td className="break-words px-2 py-2.5 sm:px-3">
                 {s.scopeBrandId ? (
                   <div>
                     <span className="font-medium">
                       {brandNameById.get(s.scopeBrandId) ?? 'Unknown company'}
                     </span>
                     {s.scopeKeyword ? (
-                      <span
-                        className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)]"
-                        style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
-                      >
-                        {s.scopeKeyword}
-                      </span>
+                      s.scopeKeyword.length > KEYWORD_PREVIEW_LEN ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedKeyword({
+                              company: brandNameById.get(s.scopeBrandId!) ?? 'Unknown company',
+                              text: s.scopeKeyword!,
+                            })
+                          }
+                          className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)] hover:underline"
+                          style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
+                          title="Click to view the full keyword"
+                        >
+                          {s.scopeKeyword.slice(0, KEYWORD_PREVIEW_LEN)}…
+                        </button>
+                      ) : (
+                        <span
+                          className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)]"
+                          style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
+                        >
+                          {s.scopeKeyword}
+                        </span>
+                      )
                     ) : null}
                   </div>
                 ) : s.scopeQuery ? (
                   <span
-                    className="font-[family-name:var(--font-mono)] text-xs text-[var(--muted)]"
+                    className="break-all font-[family-name:var(--font-mono)] text-xs text-[var(--muted)]"
                     title={s.scopeQuery}
                   >
                     {s.scopeQuery.length > 40 ? `${s.scopeQuery.slice(0, 40)}…` : s.scopeQuery}
@@ -129,13 +163,13 @@ function ScanTable({
                   <span className="text-[var(--muted)]">All companies</span>
                 )}
               </td>
-              <td className="px-4 py-3 whitespace-nowrap">
+              <td className="break-words px-2 py-2.5 sm:px-3">
                 {(s.mode || 'incremental').replaceAll('_', ' ')}
               </td>
-              <td className="px-4 py-3">
+              <td className="px-2 py-2.5 sm:px-3">
                 <ScanStatusBadge status={s.status} />
               </td>
-              <td className="px-4 py-3">
+              <td className="break-words px-2 py-2.5 sm:px-3">
                 {s.discoveryOnly ? (
                   <>
                     <span className="font-medium">{s.reposDiscovered ?? s.reposFound}</span>{' '}
@@ -155,25 +189,25 @@ function ScanTable({
                   <span className="text-[var(--muted)]"> (cap {s.maxRepos})</span>
                 ) : null}
               </td>
-              <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
+              <td className="break-words px-2 py-2.5 text-[var(--muted)] sm:px-3">
                 skip {s.reposSkipped ?? 0} · rescan {s.reposRescanned ?? 0}
                 {(s.reposResumed ?? 0) > 0 ? ` · resume ${s.reposResumed}` : ''}
                 {(s.reposPendingAnalysis ?? 0) > 0 ? ` · pending analysis ${s.reposPendingAnalysis}` : ''}
               </td>
-              <td className="px-4 py-3 whitespace-nowrap">
+              <td className="break-words px-2 py-2.5 sm:px-3">
                 +{s.findingsNew ?? s.findingsCreated} / ~{s.findingsUnchanged ?? s.findingsUpdated}
               </td>
               <td
-                className="px-4 py-3 whitespace-nowrap font-medium"
+                className="break-words px-2 py-2.5 font-medium sm:px-3"
                 style={(s.findingsHighRisk ?? 0) > 0 ? { color: 'var(--danger)' } : undefined}
               >
                 {s.findingsHighRisk ?? 0}
               </td>
-              <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
+              <td className="break-words px-2 py-2.5 text-[var(--muted)] sm:px-3">
                 {formatDateTime(s.startedAt)}
               </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-3">
+              <td className="px-2 py-2.5 sm:px-3">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <Link href={`/scans/${s._id}`} className="text-[var(--accent)] hover:underline">
                     View
                   </Link>
@@ -193,6 +227,14 @@ function ScanTable({
           ))}
         </tbody>
       </table>
+      {expandedKeyword ? (
+        <Modal
+          title={`Keyword — ${expandedKeyword.company}`}
+          onClose={() => setExpandedKeyword(null)}
+        >
+          <p className="whitespace-pre-wrap break-words text-sm">{expandedKeyword.text}</p>
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -225,6 +267,18 @@ export default function ScansPage() {
   const [pendingAnalysisCount, setPendingAnalysisCount] = useState<number | null>(
     null,
   );
+  // Guards against an older, slower request (e.g. "all brands") resolving
+  // AFTER a newer, narrower one (e.g. "just Angel One") and clobbering the
+  // count back to the wrong scope - see loadPendingAnalysisCount.
+  const pendingAnalysisRequestId = useRef(0);
+  // Count for mode=reanalyze_existing - repos already analyzed, eligible to
+  // be re-checked against a brand's CURRENT keyword list. Shares the same
+  // brand/date scoping fields below as analyze_pending (analyzeBrandId/
+  // analyzeFrom/analyzeTo/analyzeMaxRepos) since both are "replay analysis
+  // over an existing repo backlog, no new search" modes - only which
+  // backlog (pending vs already-analyzed) differs.
+  const [analyzedCount, setAnalyzedCount] = useState<number | null>(null);
+  const analyzedRequestId = useRef(0);
   // Optional scoping for mode=analyze_pending only - narrows which pending-
   // analysis backlog gets processed (and what the count/button reflect).
   // Separate state from the external-scan `brandId`/`from`/`to` above:
@@ -296,14 +350,53 @@ export default function ScansPage() {
   function loadPendingAnalysisCount(
     filters: { brandId?: string; discoveredFrom?: string; discoveredTo?: string } = {},
   ) {
+    const requestId = ++pendingAnalysisRequestId.current;
     const params = new URLSearchParams();
     if (filters.brandId) params.set('brandId', filters.brandId);
     if (filters.discoveredFrom) params.set('discoveredFrom', filters.discoveredFrom);
     if (filters.discoveredTo) params.set('discoveredTo', filters.discoveredTo);
     const qs = params.toString();
     api<{ count: number }>(`/scans/pending-analysis-count${qs ? `?${qs}` : ''}`)
-      .then((res) => setPendingAnalysisCount(res.count))
-      .catch(() => setLoadError('Failed to load the pending-analysis count.'));
+      .then((res) => {
+        // A response for a request that's no longer the latest one in
+        // flight is stale - e.g. picking a brand fires a new, narrower
+        // request, but the previous "all brands" request can still resolve
+        // after it if it happened to take longer, silently reverting the
+        // count back to the wrong scope right after the user picked one.
+        if (requestId === pendingAnalysisRequestId.current) {
+          setPendingAnalysisCount(res.count);
+        }
+      })
+      .catch(() => {
+        if (requestId === pendingAnalysisRequestId.current) {
+          setLoadError('Failed to load the pending-analysis count.');
+        }
+      });
+  }
+
+  // Mirrors loadPendingAnalysisCount above - same request-sequencing
+  // guard, same optional brand/discovered-date narrowing, just against the
+  // opposite backlog (buildAnalyzedFilter: already-analyzed repos).
+  function loadAnalyzedCount(
+    filters: { brandId?: string; discoveredFrom?: string; discoveredTo?: string } = {},
+  ) {
+    const requestId = ++analyzedRequestId.current;
+    const params = new URLSearchParams();
+    if (filters.brandId) params.set('brandId', filters.brandId);
+    if (filters.discoveredFrom) params.set('discoveredFrom', filters.discoveredFrom);
+    if (filters.discoveredTo) params.set('discoveredTo', filters.discoveredTo);
+    const qs = params.toString();
+    api<{ count: number }>(`/scans/analyzed-count${qs ? `?${qs}` : ''}`)
+      .then((res) => {
+        if (requestId === analyzedRequestId.current) {
+          setAnalyzedCount(res.count);
+        }
+      })
+      .catch(() => {
+        if (requestId === analyzedRequestId.current) {
+          setLoadError('Failed to load the already-analyzed count.');
+        }
+      });
   }
 
   useEffect(() => {
@@ -314,14 +407,19 @@ export default function ScansPage() {
       .catch(() => setLoadError('Failed to load companies - brand pickers below may be empty.'));
   }, []);
 
-  // Reloads the pending-analysis count whenever the analyze_pending scoping
-  // fields change - fires on mount too (all blank = workspace-wide count).
+  // Reloads both the pending-analysis and already-analyzed counts whenever
+  // the shared scoping fields change - fires on mount too (all blank =
+  // workspace-wide counts). Both are kept live regardless of which of the
+  // two modes is currently selected, so switching the Scan mode dropdown
+  // between them never shows a stale/zero count.
   useEffect(() => {
-    loadPendingAnalysisCount({
+    const filters = {
       brandId: analyzeBrandId || undefined,
       discoveredFrom: analyzeFrom || undefined,
       discoveredTo: analyzeTo || undefined,
-    });
+    };
+    loadPendingAnalysisCount(filters);
+    loadAnalyzedCount(filters);
   }, [analyzeBrandId, analyzeFrom, analyzeTo]);
 
   // Always polls (not gated on "anything currently known to be running") -
@@ -333,11 +431,13 @@ export default function ScansPage() {
   useEffect(() => {
     const id = setInterval(() => {
       loadActive();
-      loadPendingAnalysisCount({
+      const filters = {
         brandId: analyzeBrandId || undefined,
         discoveredFrom: analyzeFrom || undefined,
         discoveredTo: analyzeTo || undefined,
-      });
+      };
+      loadPendingAnalysisCount(filters);
+      loadAnalyzedCount(filters);
     }, 5000);
     return () => clearInterval(id);
   }, [analyzeBrandId, analyzeFrom, analyzeTo]);
@@ -363,6 +463,21 @@ export default function ScansPage() {
       setCancellingId(null);
     }
   }
+
+  // What "Analyze discovered repos" would actually process - pendingAnalysisCount
+  // capped by Max repos when one's set, so the dropdown/button never claims
+  // a bigger number than what a click would really enqueue.
+  const analyzeMaxReposNum = analyzeMaxRepos ? Number(analyzeMaxRepos) : undefined;
+  const effectiveAnalyzeCount =
+    pendingAnalysisCount !== null && analyzeMaxReposNum && analyzeMaxReposNum > 0
+      ? Math.min(pendingAnalysisCount, analyzeMaxReposNum)
+      : pendingAnalysisCount;
+  // Same capping for "Re-analyze existing repos" - shares analyzeMaxRepos
+  // with the analyze_pending fields above.
+  const effectiveReanalyzeCount =
+    analyzedCount !== null && analyzeMaxReposNum && analyzeMaxReposNum > 0
+      ? Math.min(analyzedCount, analyzeMaxReposNum)
+      : analyzedCount;
 
   const selectedBrand = brands.find((b) => b._id === brandId);
   const brandNameById = new Map(brands.map((b) => [b._id, b.name]));
@@ -392,7 +507,11 @@ export default function ScansPage() {
   }
 
   async function startManual() {
-    if (mode !== 'failed_only' && mode !== 'analyze_pending') {
+    if (
+      mode !== 'failed_only' &&
+      mode !== 'analyze_pending' &&
+      mode !== 'reanalyze_existing'
+    ) {
       if (isInternalAudit && !brandId) {
         setError('Pick a brand to run the internal audit against.');
         return;
@@ -418,10 +537,14 @@ export default function ScansPage() {
     try {
       const effectiveScope: ExternalScopeOption = isInternalAudit ? 'brand' : scope;
       const dateFilterApplies = dateRangeApplies;
-      // failed_only and analyze_pending are both workspace-wide replay
-      // modes with no scoping/filtering options of their own - everything
-      // below only applies to a genuinely new discovery/analysis run.
-      const isScopedMode = mode !== 'failed_only' && mode !== 'analyze_pending';
+      // failed_only, analyze_pending, and reanalyze_existing are all
+      // workspace-wide replay modes with no scoping/filtering options of
+      // their own - everything below only applies to a genuinely new
+      // discovery/analysis run.
+      const isScopedMode =
+        mode !== 'failed_only' &&
+        mode !== 'analyze_pending' &&
+        mode !== 'reanalyze_existing';
       const job = await api<ScanJob>('/scans/manual', {
         method: 'POST',
         body: JSON.stringify({
@@ -451,21 +574,26 @@ export default function ScansPage() {
           // for internalAudit, which always runs full analysis (that's the
           // whole point of an audit).
           ...(isScopedMode && !isInternalAudit ? { discoveryOnly: true } : {}),
-          // analyze_pending's own optional scoping - separate concepts from
-          // the brand/date fields above, which mean "GitHub's own
-          // created/pushed dates" for a search-time scan; here brandId means
-          // "which brand's backlog" and discoveredFrom/To mean "when THIS
-          // WORKSPACE discovered the repo" - see ManualScanDto.
-          ...(mode === 'analyze_pending' && analyzeBrandId
+          // analyze_pending/reanalyze_existing's own optional scoping -
+          // separate concepts from the brand/date fields above, which mean
+          // "GitHub's own created/pushed dates" for a search-time scan;
+          // here brandId means "which brand's backlog" and
+          // discoveredFrom/To mean "when THIS WORKSPACE discovered the
+          // repo" - see ManualScanDto.
+          ...((mode === 'analyze_pending' || mode === 'reanalyze_existing') &&
+          analyzeBrandId
             ? { brandId: analyzeBrandId }
             : {}),
-          ...(mode === 'analyze_pending' && analyzeFrom
+          ...((mode === 'analyze_pending' || mode === 'reanalyze_existing') &&
+          analyzeFrom
             ? { discoveredFrom: analyzeFrom }
             : {}),
-          ...(mode === 'analyze_pending' && analyzeTo
+          ...((mode === 'analyze_pending' || mode === 'reanalyze_existing') &&
+          analyzeTo
             ? { discoveredTo: analyzeTo }
             : {}),
-          ...(mode === 'analyze_pending' && analyzeMaxRepos
+          ...((mode === 'analyze_pending' || mode === 'reanalyze_existing') &&
+          analyzeMaxRepos
             ? { maxRepos: Number(analyzeMaxRepos) }
             : {}),
         }),
@@ -522,7 +650,11 @@ export default function ScansPage() {
                 <option value="full">Full rescan</option>
                 <option value="failed_only">Failed items only</option>
                 <option value="analyze_pending">
-                  Analyze discovered repos{pendingAnalysisCount ? ` (${pendingAnalysisCount})` : ''}
+                  Analyze discovered repos{effectiveAnalyzeCount ? ` (${effectiveAnalyzeCount})` : ''}
+                </option>
+                <option value="reanalyze_existing">
+                  Re-analyze existing repos
+                  {effectiveReanalyzeCount ? ` (${effectiveReanalyzeCount})` : ''}
                 </option>
               </Select>
             </Field>
@@ -596,7 +728,71 @@ export default function ScansPage() {
                   ? 'Enqueueing…'
                   : pendingAnalysisCount === 0
                     ? 'Nothing pending analysis'
-                    : `Analyze ${pendingAnalysisCount ?? ''} discovered repositories`}
+                    : `Analyze ${effectiveAnalyzeCount ?? ''} discovered repositories`}
+              </Button>
+              <p className="text-sm">
+                <Link href="/repositories" className="text-[var(--accent)] hover:underline">
+                  Browse discovered repositories →
+                </Link>
+              </p>
+            </div>
+          ) : mode === 'reanalyze_existing' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-[var(--muted)]">
+                Re-runs real content analysis on repos that were ALREADY analyzed - for when a
+                brand&apos;s own keywords (Companies page) changed since those repos were last
+                checked. Always a full re-scan, regardless of whether the repo&apos;s code has
+                changed. Workspace-wide and unlimited by default — narrow to one brand, a
+                discovered-date window, and/or a max count below, or leave everything blank for a
+                full bulk run.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <Field label="Brand">
+                  <Select value={analyzeBrandId} onChange={(e) => setAnalyzeBrandId(e.target.value)}>
+                    <option value="">All brands</option>
+                    {brands.map((b) => (
+                      <option key={b._id} value={b._id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Discovered from">
+                  <Input
+                    type="date"
+                    value={analyzeFrom}
+                    onChange={(e) => setAnalyzeFrom(e.target.value)}
+                  />
+                </Field>
+                <Field label="Discovered to">
+                  <Input
+                    type="date"
+                    value={analyzeTo}
+                    onChange={(e) => setAnalyzeTo(e.target.value)}
+                  />
+                </Field>
+                <Field label="Max repos">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={analyzeMaxRepos}
+                    onChange={(e) => setAnalyzeMaxRepos(e.target.value)}
+                    placeholder="No limit"
+                    className="w-28"
+                  />
+                </Field>
+              </div>
+              <Button
+                type="button"
+                onClick={startManual}
+                disabled={analyzedCount === 0}
+                loading={running}
+              >
+                {running
+                  ? 'Enqueueing…'
+                  : analyzedCount === 0
+                    ? 'Nothing analyzed yet to re-check'
+                    : `Re-analyze ${effectiveReanalyzeCount ?? ''} existing repositories`}
               </Button>
               <p className="text-sm">
                 <Link href="/repositories" className="text-[var(--accent)] hover:underline">

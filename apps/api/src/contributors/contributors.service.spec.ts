@@ -34,7 +34,9 @@ describe('ContributorsService.list', () => {
       find: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnThis(),
         lean: jest.fn().mockReturnThis(),
-        exec: jest.fn().mockResolvedValue([{ _id: repoId, discoveryBrandId: null }]),
+        exec: jest
+          .fn()
+          .mockResolvedValue([{ _id: repoId, discoveryBrandId: null }]),
       }),
     };
     const brandModel = { find: jest.fn() };
@@ -95,7 +97,9 @@ describe('ContributorsService.list', () => {
       find: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnThis(),
         lean: jest.fn().mockReturnThis(),
-        exec: jest.fn().mockResolvedValue([{ _id: repoId, discoveryBrandId: brandId }]),
+        exec: jest
+          .fn()
+          .mockResolvedValue([{ _id: repoId, discoveryBrandId: brandId }]),
       }),
     };
     const brandModel = {
@@ -182,7 +186,10 @@ describe('ContributorsService.list', () => {
       $match?: { _id?: { $regex: string; $options: string } };
     }>;
     const searchStage = dataPipeline.find((s) => s.$match?._id);
-    expect(searchStage?.$match?._id).toEqual({ $regex: 'shared', $options: 'i' });
+    expect(searchStage?.$match?._id).toEqual({
+      $regex: 'shared',
+      $options: 'i',
+    });
   });
 
   it('adds a totalRepositories $gte stage when minRepositories is given', async () => {

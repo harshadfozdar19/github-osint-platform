@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ScanJobStatus, TERMINAL_SCAN_STATUSES } from '../common/enums';
@@ -544,7 +550,7 @@ export class ScanStateService {
       );
     } catch (err) {
       this.logger.warn(
-        `Keyword watch auto-restart skipped for scan ${job._id} (keyword "${job.scopeKeyword}"): ${safeJobError(err)}`,
+        `Keyword watch auto-restart skipped for scan ${String(job._id)} (keyword "${job.scopeKeyword}"): ${safeJobError(err)}`,
       );
     }
   }

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import clsx from 'clsx';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
@@ -13,6 +14,7 @@ import {
   ErrorState,
   Field,
   Input,
+  Modal,
   Pagination,
   Select,
   SeverityBadge,
@@ -34,6 +36,51 @@ function statusLabel(status?: string) {
       return 'Open';
   }
 }
+
+const LIST_STATUS_OPTIONS: Array<{
+  value: 'none' | 'watchlist' | 'ignorelist' | 'allowlist' | 'blocklist';
+  label: string;
+}> = [
+  { value: 'none', label: 'Unclassified' },
+  { value: 'watchlist', label: 'Watchlist' },
+  { value: 'ignorelist', label: 'Ignorelist' },
+  { value: 'allowlist', label: 'Allowlist' },
+  { value: 'blocklist', label: 'Blocklist' },
+];
+
+/** Color coding for the analyst classification tag, also used to tint the whole row so a classified finding is recognizable at a glance. */
+const LIST_STATUS_STYLE: Record<
+  string,
+  { color: string; bg: string; border: string; rowBg: string }
+> = {
+  watchlist: {
+    color: 'var(--warning)',
+    bg: 'var(--warning-soft)',
+    border: 'var(--warning-border-soft)',
+    rowBg: 'var(--warning-soft)',
+  },
+  ignorelist: {
+    color: 'var(--muted)',
+    bg: 'var(--bg-subtle)',
+    border: 'var(--border)',
+    rowBg: 'var(--bg-subtle)',
+  },
+  allowlist: {
+    color: 'var(--low)',
+    bg: 'var(--low-soft)',
+    border: 'var(--low-border-soft)',
+    rowBg: 'var(--low-soft)',
+  },
+  blocklist: {
+    color: 'var(--danger)',
+    bg: 'var(--danger-soft)',
+    border: 'var(--danger-border-soft)',
+    rowBg: 'var(--danger-soft)',
+  },
+};
+
+/** Categories beyond this length get truncated with a click-to-expand modal, instead of wrapping the whole row taller. */
+const CATEGORY_PREVIEW_LEN = 30;
 
 function threatClassLabel(tc: string) {
   switch (tc) {
@@ -199,6 +246,12 @@ export default function FindingsPage() {
   const [threatClass, setThreatClass] = useState('');
   const [origin, setOrigin] = useState('');
   const [status, setStatus] = useState('');
+  const [listStatusFilter, setListStatusFilter] = useState('');
+  const [updatingListStatus, setUpdatingListStatus] = useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<{
+    repo: string;
+    categories: string[];
+  } | null>(null);
   const [brand, setBrand] = useState('');
   const [dateRange, setDateRange] = useState('');
   // Filters by the repo's own GitHub created/pushed timestamps, not by when
@@ -229,6 +282,7 @@ export default function FindingsPage() {
       if (threatClass) params.set('threatClass', threatClass);
       if (origin) params.set('origin', origin);
       if (status) params.set('status', status);
+      if (listStatusFilter) params.set('listStatus', listStatusFilter);
       if (brand) params.set('brand', brand);
       const { from, to } = dateRangeBounds(dateRange);
       if (from) params.set('from', from);
@@ -255,6 +309,32 @@ export default function FindingsPage() {
   function onFilter(e: FormEvent) {
     e.preventDefault();
     load(1);
+  }
+
+  async function updateListStatus(findingId: string, value: string) {
+    setUpdatingListStatus(findingId);
+    try {
+      await api(`/findings/${findingId}/list-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ listStatus: value }),
+      });
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              data: prev.data.map((f) =>
+                f._id === findingId
+                  ? { ...f, listStatus: value as Finding['listStatus'] }
+                  : f,
+              ),
+            }
+          : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update list status');
+    } finally {
+      setUpdatingListStatus(null);
+    }
   }
 
   return (
@@ -285,6 +365,21 @@ export default function FindingsPage() {
                 <option value="acknowledged">Acknowledged</option>
                 <option value="resolved">Resolved</option>
                 <option value="false_positive">False positive</option>
+              </Select>
+            </Field>
+            <Field label="List">
+              <Select
+                value={listStatusFilter}
+                onChange={(e) => setListStatusFilter(e.target.value)}
+                title="Analyst classification tag - independent of Status above"
+              >
+                <option value="">All</option>
+                {LIST_STATUS_OPTIONS.filter((o) => o.value !== 'none').map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+                <option value="none">Unclassified only</option>
               </Select>
             </Field>
             <Field label="Category">
@@ -402,6 +497,12 @@ export default function FindingsPage() {
                   <th className="px-4 py-3 font-medium">Origin</th>
                   <th className="px-4 py-3 font-medium">Severity</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th
+                    className="px-4 py-3 font-medium"
+                    title="Analyst classification tag - independent of Status"
+                  >
+                    List
+                  </th>
                   <th className="px-4 py-3 font-medium">Score</th>
                   <th className="px-4 py-3 font-medium" title="Distinct curated keywords matched">
                     Keywords
@@ -420,10 +521,18 @@ export default function FindingsPage() {
               <tbody>
                 {data.data.map((f) => {
                   const repo = f.repositoryId as Repository | undefined;
+                  const listMeta =
+                    f.listStatus && f.listStatus !== 'none'
+                      ? LIST_STATUS_STYLE[f.listStatus]
+                      : null;
                   return (
                     <tr
                       key={f._id}
-                      className="border-t border-[var(--border)] transition-colors duration-150 hover:bg-[var(--bg-subtle)]"
+                      className={clsx(
+                        'border-t border-[var(--border)] transition-colors duration-150',
+                        listMeta ? 'hover:brightness-95' : 'hover:bg-[var(--bg-subtle)]',
+                      )}
+                      style={listMeta ? { background: listMeta.rowBg } : undefined}
                     >
                       <td className="px-4 py-3">
                         <Link href={`/findings/${f._id}`} className="font-medium hover:text-[var(--accent)]">
@@ -465,6 +574,29 @@ export default function FindingsPage() {
                       <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
                         {statusLabel(f.status)}
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <Select
+                          value={f.listStatus || 'none'}
+                          onChange={(e) => updateListStatus(f._id, e.target.value)}
+                          disabled={updatingListStatus === f._id}
+                          className="!py-1 text-xs font-medium"
+                          style={
+                            f.listStatus && f.listStatus !== 'none'
+                              ? {
+                                  color: LIST_STATUS_STYLE[f.listStatus].color,
+                                  background: LIST_STATUS_STYLE[f.listStatus].bg,
+                                  borderColor: LIST_STATUS_STYLE[f.listStatus].border,
+                                }
+                              : undefined
+                          }
+                        >
+                          {LIST_STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap font-[family-name:var(--font-mono)]">
                         {f.riskScore}
                       </td>
@@ -472,7 +604,28 @@ export default function FindingsPage() {
                         {f.keywordMatchCount ?? 0}
                       </td>
                       <td className="px-4 py-3 text-[var(--muted)]">
-                        {f.categories?.map((c) => c.replace(/_/g, ' ')).join(', ')}
+                        {(() => {
+                          const categoryLabels = (f.categories ?? []).map((c) =>
+                            c.replace(/_/g, ' '),
+                          );
+                          const joined = categoryLabels.join(', ');
+                          if (joined.length <= CATEGORY_PREVIEW_LEN) return joined;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedCategories({
+                                  repo: repo?.fullName || f.summary,
+                                  categories: categoryLabels,
+                                })
+                              }
+                              className="text-left hover:text-[var(--accent)] hover:underline"
+                              title="Click to view all categories"
+                            >
+                              {joined.slice(0, CATEGORY_PREVIEW_LEN)}…
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <ThreatClassBadge threatClass={f.threatClass || []} />
@@ -493,6 +646,21 @@ export default function FindingsPage() {
 
         {data && data.meta.totalPages > 1 ? (
           <Pagination page={data.meta.page} totalPages={data.meta.totalPages} onChange={load} />
+        ) : null}
+
+        {expandedCategories ? (
+          <Modal
+            title={`Categories — ${expandedCategories.repo}`}
+            onClose={() => setExpandedCategories(null)}
+          >
+            <div className="flex flex-wrap gap-1.5">
+              {expandedCategories.categories.map((c) => (
+                <Badge key={c} tone="muted" className="capitalize">
+                  {c}
+                </Badge>
+              ))}
+            </div>
+          </Modal>
         ) : null}
       </AppShell>
     </RequireAuth>

@@ -20,9 +20,17 @@ export interface GitHubRepoSearchItem {
   fork: boolean;
   language: string | null;
   topics?: string[];
-  created_at: string;
+  /**
+   * Absent for a code-search result whose embedded `repository` object
+   * GitHub simply never populates with this - see searchCode, which tries a
+   * direct repo-metadata fetch to backfill it for a newly-discovered repo,
+   * but genuinely may still come up empty (rate-limited, repo deleted since,
+   * etc). Callers must treat a missing value as "unknown", never default it
+   * to an arbitrary date - see Repository.githubCreatedAt.
+   */
+  created_at?: string;
   updated_at?: string;
-  pushed_at: string;
+  pushed_at?: string;
   owner: { login: string };
   name: string;
   default_branch?: string;
@@ -207,10 +215,15 @@ export class GitHubService {
         fork: repo.fork === true,
         language: repo.language || null,
         topics: repo.topics || [],
-        created_at: repo.created_at || new Date(0).toISOString(),
+        // No epoch/placeholder fallback here - an absent value must stay
+        // absent (see GitHubRepoSearchItem.created_at) so it reads as
+        // "unknown" downstream instead of a bogus 1 Jan 1970. The discovery
+        // processor tries a direct repo-metadata fetch to fill these in for
+        // a genuinely new repo right after this - see
+        // GitHubSearchProcessor's use of getRepositoryTimestamps.
+        created_at: repo.created_at,
         updated_at: repo.updated_at,
-        pushed_at:
-          repo.pushed_at || repo.updated_at || new Date(0).toISOString(),
+        pushed_at: repo.pushed_at || repo.updated_at,
         owner: { login: repo.owner?.login || ownerLogin },
         name: repo.name || name,
         matchedPath: item.path,
@@ -621,6 +634,40 @@ export class GitHubService {
   }
 
   /**
+   * Direct repo-metadata fetch for just created_at/pushed_at - used to
+   * backfill a code-search discovery, whose embedded `repository` object
+   * never includes either (see GitHubRepoSearchItem.created_at). Best-effort
+   * on every failure (not just non-retryable ones, unlike most other methods
+   * here): this only ever supplements a date the UI would otherwise show as
+   * "unknown," so a transient error here must never fail the discovery scan
+   * itself - null just means the date stays unknown.
+   */
+  async getRepositoryTimestamps(
+    owner: string,
+    repo: string,
+    ctx: GitHubRequestContext = {},
+  ): Promise<{ createdAt?: string; pushedAt?: string } | null> {
+    try {
+      this.assertSafeOwnerRepo(owner, repo);
+      const res = await this.http.request<{
+        created_at?: string;
+        updated_at?: string;
+        pushed_at?: string;
+      }>('GET', `/repos/${owner}/${repo}`, {
+        ctx,
+        resourceHint: 'core',
+        useEtag: true,
+      });
+      return {
+        createdAt: res.data.created_at,
+        pushedAt: res.data.pushed_at || res.data.updated_at,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Does this repo have a live, GitHub-hosted deployment - direct proof of
    * an active site rather than dormant source code. Routed through the same
    * rate-limited/token-aware http client as every other GitHub call here
@@ -661,7 +708,9 @@ export class GitHubService {
     owner: string,
     repo: string,
     ctx: GitHubRequestContext = {},
-  ): Promise<Array<{ login: string; avatarUrl?: string; contributions: number }>> {
+  ): Promise<
+    Array<{ login: string; avatarUrl?: string; contributions: number }>
+  > {
     this.assertSafeOwnerRepo(owner, repo);
     try {
       const res = await this.http.request<
@@ -711,7 +760,12 @@ export class GitHubService {
     owner: string,
     repo: string,
     ctx: GitHubRequestContext = {},
-  ): Promise<{ environment: string; url: string; state: string; updatedAt?: string } | null> {
+  ): Promise<{
+    environment: string;
+    url: string;
+    state: string;
+    updatedAt?: string;
+  } | null> {
     this.assertSafeOwnerRepo(owner, repo);
     try {
       const [meta, deployments] = await Promise.all([
@@ -746,7 +800,12 @@ export class GitHubService {
       >(
         'GET',
         `/repos/${owner}/${repo}/deployments/${deployment.id}/statuses`,
-        { ctx, resourceHint: 'core', useEtag: false, params: { per_page: '10' } },
+        {
+          ctx,
+          resourceHint: 'core',
+          useEtag: false,
+          params: { per_page: '10' },
+        },
       );
       const withUrl = (statuses.data || []).find((s) => s.environment_url);
       if (!withUrl?.environment_url) return null;

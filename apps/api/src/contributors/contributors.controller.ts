@@ -27,18 +27,28 @@ export class ContributorsController {
     summary:
       'List GitHub contributors seen across this workspace during deep analysis, each with total repo count and company breakdown',
   })
-  @ApiQuery({ name: 'search', required: false, description: 'GitHub login substring' })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'GitHub login substring',
+  })
   @ApiQuery({
     name: 'companyId',
     required: false,
-    description: 'Only contributors with at least one repo discovered for this MonitoredBrand',
+    description:
+      'Only contributors with at least one repo discovered for this MonitoredBrand',
   })
   @ApiQuery({
     name: 'minRepositories',
     required: false,
-    description: 'Only contributors active on at least this many distinct repos in the workspace',
+    description:
+      'Only contributors active on at least this many distinct repos in the workspace',
   })
-  @ApiQuery({ name: 'sortBy', required: false, enum: ['totalRepositories', 'login'] })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['totalRepositories', 'login'],
+  })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   async list(

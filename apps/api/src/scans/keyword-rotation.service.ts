@@ -40,6 +40,8 @@ export interface KeywordRotationSlotInput {
   searchScope?: 'both' | 'repositories' | 'code';
   /** Resume this keyword's queries from its own discovery cursor instead of restarting at page 1 every turn - see KeywordRotationSlot.continueDiscovery. Defaults to true when omitted. */
   continueDiscovery?: boolean;
+  /** Keep this slot paused after this call instead of running it - see KeywordRotationSlotDto.paused for why this must be explicit rather than just omitting the slot. Defaults to false (running) when omitted. */
+  paused?: boolean;
 }
 
 const VALID_SEARCH_SCOPES = ['both', 'repositories', 'code'] as const;
@@ -249,6 +251,7 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
         durationMs,
         searchScope: s.searchScope ?? 'both',
         continueDiscovery: s.continueDiscovery !== false,
+        paused: s.paused === true,
       };
     });
 
@@ -290,6 +293,7 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
       durationMs: s.durationMs,
       searchScope: s.searchScope,
       continueDiscovery: s.continueDiscovery,
+      paused: s.paused,
     }));
   }
 
@@ -385,10 +389,10 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
     }
     const validated = await this.validateSlots(workspaceId, newSlots);
     const existing = new Set(
-      doc.slots.map((s) => `${s.brandId} ${s.keyword.toLowerCase()}`),
+      doc.slots.map((s) => `${String(s.brandId)} ${s.keyword.toLowerCase()}`),
     );
     const toAdd = validated.filter(
-      (s) => !existing.has(`${s.brandId} ${s.keyword.toLowerCase()}`),
+      (s) => !existing.has(`${String(s.brandId)} ${s.keyword.toLowerCase()}`),
     );
     if (toAdd.length > 0) {
       doc.slots.push(...toAdd);
@@ -615,6 +619,17 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
    * job, which must match the doc's current pendingAdvanceToken - a stale
    * timer from a slot that already ended early is a no-op instead of firing
    * a spurious extra handoff.
+   *
+   * The keyword whose slot just elapsed is paused here before handing off -
+   * a keyword's duration is a one-shot "run for this long, then stop," not
+   * an invitation to keep re-running it forever every time the rotation
+   * laps back around. Its own pause toggle is exactly how you'd turn it
+   * back on for another timed run whenever you want. With only one
+   * unpaused keyword left in the queue, this naturally winds the whole
+   * rotation down after that keyword's own turn instead of looping the
+   * same keyword indefinitely (see startSlot's "every keyword is paused"
+   * branch) - previously this looked identical to the timer never actually
+   * stopping anything.
    */
   async advance(
     workspaceId: string,
@@ -636,6 +651,11 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
     if (await this.tryExtendSlotForQuotaPause(doc, workspaceId)) return;
 
     await this.cancelCurrentSlot(doc);
+
+    if (doc.currentIndex >= 0 && doc.currentIndex < doc.slots.length) {
+      doc.slots[doc.currentIndex].paused = true;
+      doc.markModified('slots');
+    }
 
     const nextIndex = (doc.currentIndex + 1) % doc.slots.length;
     if (nextIndex === 0) doc.cyclesCompleted += 1;
@@ -723,7 +743,7 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
         );
       } catch (err) {
         this.logger.warn(
-          `Failed to cancel prior rotation scan ${doc.currentScanJobId} for workspace ${doc.workspaceId}: ${safeJobError(err)}`,
+          `Failed to cancel prior rotation scan ${String(doc.currentScanJobId)} for workspace ${String(doc.workspaceId)}: ${safeJobError(err)}`,
         );
       }
     }
@@ -819,12 +839,12 @@ export class KeywordRotationService implements OnModuleInit, OnModuleDestroy {
       } catch (err) {
         if (err instanceof ConflictException) {
           this.logger.warn(
-            `Keyword rotation skipped "${keyword}" (brand ${brandId}) for workspace ${workspaceId} - already independently active`,
+            `Keyword rotation skipped "${keyword}" (brand ${String(brandId)}) for workspace ${workspaceId} - already independently active`,
           );
           continue;
         }
         this.logger.warn(
-          `Keyword rotation failed to start "${keyword}" (brand ${brandId}) for workspace ${workspaceId}: ${safeJobError(err)}`,
+          `Keyword rotation failed to start "${keyword}" (brand ${String(brandId)}) for workspace ${workspaceId}: ${safeJobError(err)}`,
         );
         continue;
       }

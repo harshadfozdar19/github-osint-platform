@@ -133,7 +133,7 @@ describe('ScanOrchestratorProcessor distinctive-phrase wiring', () => {
 
   it('passes scopedToBrand=true to buildSearchQueries when the scan has a scopeBrandId (regression: brand-agnostic sweeps leaking into a brand-scoped scan)', async () => {
     const { processor, pipeline, scanState } = buildProcessor([]);
-    (scanState.assertOwned as jest.Mock).mockResolvedValue({
+    scanState.assertOwned.mockResolvedValue({
       mode: 'incremental',
       maxRepos: 1000,
       checkpoint: {},
@@ -163,7 +163,7 @@ describe('ScanOrchestratorProcessor distinctive-phrase wiring', () => {
 
   it('passes scan.scopeKeyword through to buildSearchQueries as the onlyKeyword arg', async () => {
     const { processor, pipeline, scanState } = buildProcessor([]);
-    (scanState.assertOwned as jest.Mock).mockResolvedValue({
+    scanState.assertOwned.mockResolvedValue({
       mode: 'incremental',
       maxRepos: 1000,
       checkpoint: {},
@@ -266,12 +266,14 @@ describe('ScanOrchestratorProcessor custom-query date filtering', () => {
     const queries = scanQueue.enqueueGithubSearch.mock.calls.map(
       (call) => (call[0] as { query: string }).query,
     );
-    expect(queries.some((q) => q === 'angelone login created:2026-08-10..2026-08-10')).toBe(
-      true,
-    );
-    expect(queries.some((q) => q === 'angelone login pushed:2026-08-10..2026-08-10')).toBe(
-      true,
-    );
+    expect(
+      queries.some(
+        (q) => q === 'angelone login created:2026-08-10..2026-08-10',
+      ),
+    ).toBe(true);
+    expect(
+      queries.some((q) => q === 'angelone login pushed:2026-08-10..2026-08-10'),
+    ).toBe(true);
   });
 
   it("issues one search job combining both qualifiers for a customQuery scan with dateFilterMode 'and' (default)", async () => {
@@ -658,7 +660,7 @@ describe('ScanOrchestratorProcessor analyze_pending mode', () => {
     // immediately, never defers), so this is always external.
     expect(payload.internalAudit).toBe(false);
 
-    const updateCall = (scanModel.findByIdAndUpdate as jest.Mock).mock.calls.find(
+    const updateCall = scanModel.findByIdAndUpdate.mock.calls.find(
       (call) => call[1]?.$inc?.reposDiscovered,
     ) as [string, { $inc: Record<string, number> }];
     expect(updateCall[1].$inc.reposDiscovered).toBe(2);
@@ -700,6 +702,158 @@ describe('ScanOrchestratorProcessor analyze_pending mode', () => {
       expect.objectContaining({
         $pull: { 'checkpoint.pendingGithubIds': { $in: [301] } },
       }),
+    );
+  });
+});
+
+describe('ScanOrchestratorProcessor reanalyze_existing mode', () => {
+  const workspaceId = new Types.ObjectId().toHexString();
+  const scanJobId = new Types.ObjectId().toHexString();
+
+  function repoDoc(githubId: number) {
+    return {
+      githubId,
+      fullName: `evil/zerodha-clone-${githubId}`,
+      url: `https://github.com/evil/zerodha-clone-${githubId}`,
+      description: '',
+      stars: 0,
+      forks: 0,
+      isFork: false,
+      language: '',
+      topics: [],
+      githubCreatedAt: new Date('2023-01-01T00:00:00Z'),
+      githubUpdatedAt: new Date('2023-01-02T00:00:00Z'),
+      githubPushedAt: new Date('2023-01-02T00:00:00Z'),
+      owner: 'evil',
+      name: `zerodha-clone-${githubId}`,
+      defaultBranch: 'main',
+    };
+  }
+
+  function buildProcessor(overrides: {
+    analyzedIds: number[];
+    repos: Record<number, ReturnType<typeof repoDoc> | undefined>;
+  }) {
+    // Deliberately no enqueueGithubSearch mock - reanalyze_existing must
+    // never reach the search-dispatch path at all, same as analyze_pending.
+    const scanQueue = {
+      enqueueRepositoryAnalysisBulk: jest
+        .fn()
+        .mockImplementation((items: unknown[]) =>
+          Promise.resolve(items.map(() => ({}))),
+        ),
+    };
+    const scanState = {
+      assertOwned: jest.fn().mockResolvedValue({
+        mode: 'reanalyze_existing',
+        maxRepos: 1000,
+        checkpoint: {},
+      }),
+      isCancelled: jest.fn().mockResolvedValue(false),
+      markRunning: jest.fn().mockResolvedValue(undefined),
+      markCompletedEarly: jest.fn().mockResolvedValue(undefined),
+      finalize: jest.fn().mockResolvedValue(undefined),
+    };
+    const github = {
+      isConfiguredForWorkspace: jest.fn().mockResolvedValue(true),
+      isRateLimited: jest.fn().mockResolvedValue(false),
+      clearScanPause: jest.fn().mockResolvedValue(undefined),
+    };
+    const incremental = {
+      currentRulesetVersion: jest.fn().mockReturnValue('ruleset'),
+      listAnalyzedGithubIds: jest.fn().mockResolvedValue(overrides.analyzedIds),
+      claimManyForAnalysis: jest.fn((_scanJobId: string, ids: number[]) =>
+        Promise.resolve(ids),
+      ),
+      findManyByGithubIds: jest.fn((_ws: string, ids: number[]) =>
+        Promise.resolve(
+          ids
+            .map((id) => overrides.repos[id])
+            .filter((r): r is ReturnType<typeof repoDoc> => Boolean(r)),
+        ),
+      ),
+    };
+    const brandModel = {
+      find: jest.fn().mockReturnValue({
+        lean: () => ({ exec: () => Promise.resolve([]) }),
+      }),
+    };
+    const keywordModel = {
+      find: jest.fn().mockReturnValue({
+        lean: () => ({ exec: () => Promise.resolve([]) }),
+      }),
+    };
+    const scanModel = { findByIdAndUpdate: jest.fn().mockResolvedValue({}) };
+
+    const processor = new ScanOrchestratorProcessor(
+      scanQueue as never,
+      scanState as never,
+      {} as never,
+      incremental as never,
+      { getResumePage: jest.fn().mockResolvedValue(1) } as never,
+      github as never,
+      { get: () => undefined } as never,
+      brandModel as never,
+      keywordModel as never,
+      scanModel as never,
+    );
+
+    return { processor, scanQueue, scanState, incremental, scanModel };
+  }
+
+  it('skips search entirely and force-analyzes every already-analyzed repo workspace-wide', async () => {
+    const { processor, scanQueue, scanModel } = buildProcessor({
+      analyzedIds: [401, 402],
+      repos: { 401: repoDoc(401), 402: repoDoc(402) },
+    });
+
+    await processor.process({
+      data: { workspaceId, scanJobId },
+      opts: { priority: 5 },
+    } as never);
+
+    expect(scanQueue.enqueueRepositoryAnalysisBulk).toHaveBeenCalledTimes(1);
+    const [items] = scanQueue.enqueueRepositoryAnalysisBulk.mock.calls[0] as [
+      Array<{
+        forceFullScan: boolean;
+        repo: { id: number };
+        mode: string;
+        internalAudit?: boolean;
+      }>,
+    ];
+    expect(items).toHaveLength(2);
+    const [payload] = items;
+    // forceFullScan guarantees decideRescan re-analyzes it regardless of
+    // whether its commit SHA is unchanged - the whole point of this mode is
+    // re-checking content against a keyword list that may have changed
+    // since the repo was last analyzed, not whether the code itself moved.
+    expect(payload.forceFullScan).toBe(true);
+    expect(payload.repo.id).toBe(401);
+    expect(payload.mode).toBe('reanalyze_existing');
+    expect(payload.internalAudit).toBe(false);
+
+    const updateCall = scanModel.findByIdAndUpdate.mock.calls.find(
+      (call) => call[1]?.$inc?.reposDiscovered,
+    ) as [string, { $inc: Record<string, number> }];
+    expect(updateCall[1].$inc.reposDiscovered).toBe(2);
+    expect(updateCall[1].$inc.awaitingAnalysis).toBe(2);
+  });
+
+  it('marks the scan completed with no work when nothing already-analyzed matches the scope', async () => {
+    const { processor, scanState, scanQueue } = buildProcessor({
+      analyzedIds: [],
+      repos: {},
+    });
+
+    await processor.process({
+      data: { workspaceId, scanJobId },
+      opts: { priority: 5 },
+    } as never);
+
+    expect(scanQueue.enqueueRepositoryAnalysisBulk).not.toHaveBeenCalled();
+    expect(scanState.markCompletedEarly).toHaveBeenCalledWith(
+      scanJobId,
+      'No already-analyzed repositories match this scope',
     );
   });
 });

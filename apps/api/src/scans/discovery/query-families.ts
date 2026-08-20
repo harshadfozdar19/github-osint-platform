@@ -146,7 +146,9 @@ export function buildDateQualifierVariants(
   if (mode === 'or' && createdQualifier && pushedQualifier) {
     return [createdQualifier, pushedQualifier];
   }
-  const combined = [createdQualifier, pushedQualifier].filter(Boolean).join(' ');
+  const combined = [createdQualifier, pushedQualifier]
+    .filter(Boolean)
+    .join(' ');
   return combined ? [combined] : [];
 }
 
@@ -174,7 +176,11 @@ function endOfUtcDay(d: Date): number {
  * createdTo of today's midnight-exact Date.
  */
 export function repoMatchesActivityWindow(
-  item: { created_at: string; pushed_at: string },
+  // Optional - a code-search result's embedded repo object never includes
+  // these (see GitHubRepoSearchItem.created_at); an unknown date can't be
+  // confirmed to fall inside a requested window, so it's treated as not
+  // matching that axis below rather than assumed to pass.
+  item: { created_at?: string; pushed_at?: string },
   window: {
     createdFrom?: Date;
     createdTo?: Date;
@@ -187,16 +193,22 @@ export function repoMatchesActivityWindow(
   const hasPushedBound = Boolean(window.pushedFrom || window.pushedTo);
   if (!hasCreatedBound && !hasPushedBound) return true;
 
-  const createdAt = new Date(item.created_at).getTime();
-  const pushedAt = new Date(item.pushed_at).getTime();
+  const createdAt = item.created_at
+    ? new Date(item.created_at).getTime()
+    : undefined;
+  const pushedAt = item.pushed_at
+    ? new Date(item.pushed_at).getTime()
+    : undefined;
 
   const createdMatches =
     !hasCreatedBound ||
-    ((!window.createdFrom || createdAt >= window.createdFrom.getTime()) &&
+    (createdAt !== undefined &&
+      (!window.createdFrom || createdAt >= window.createdFrom.getTime()) &&
       (!window.createdTo || createdAt <= endOfUtcDay(window.createdTo)));
   const pushedMatches =
     !hasPushedBound ||
-    ((!window.pushedFrom || pushedAt >= window.pushedFrom.getTime()) &&
+    (pushedAt !== undefined &&
+      (!window.pushedFrom || pushedAt >= window.pushedFrom.getTime()) &&
       (!window.pushedTo || pushedAt <= endOfUtcDay(window.pushedTo)));
 
   if (hasCreatedBound && hasPushedBound) {

@@ -179,12 +179,8 @@ export class ScanOrchestratorProcessor extends WorkerHost {
               fork: repo.isFork,
               language: repo.language,
               topics: repo.topics,
-              created_at: (
-                repo.githubCreatedAt || new Date()
-              ).toISOString(),
-              updated_at: (
-                repo.githubUpdatedAt || new Date()
-              ).toISOString(),
+              created_at: (repo.githubCreatedAt || new Date()).toISOString(),
+              updated_at: (repo.githubUpdatedAt || new Date()).toISOString(),
               pushed_at: (repo.githubPushedAt || new Date()).toISOString(),
               owner: { login: repo.owner },
               name: repo.name,
@@ -393,6 +389,57 @@ export class ScanOrchestratorProcessor extends WorkerHost {
         return;
       }
 
+      // Re-analyze: the opposite backlog from ANALYZE_PENDING above - repos
+      // that were already analyzed, re-checked now that (most likely) a
+      // brand's keyword list changed since. forceFullScan:true forces every
+      // one of them through analysis regardless of whether their commit SHA
+      // is unchanged (see IncrementalScanService.decideRescan) - the whole
+      // point here is re-running detection with the CURRENT keyword list
+      // (brandRefs above was just fetched fresh from MonitoredBrand), not
+      // re-checking whether the code itself moved.
+      if (mode === ScanMode.REANALYZE_EXISTING) {
+        const analyzedIds = await this.incremental.listAnalyzedGithubIds(
+          workspaceId,
+          {
+            brandId: scan.scopeBrandId ? String(scan.scopeBrandId) : undefined,
+            discoveredFrom: scan.discoveredFrom,
+            discoveredTo: scan.discoveredTo,
+          },
+        );
+        const enqueued = await this.bulkEnqueueAnalysis({
+          workspaceId,
+          scanJobId,
+          githubIds: analyzedIds,
+          maxRepos,
+          mode,
+          rulesetVersion,
+          brandRefs,
+          forceFullScan: true,
+          internalAudit: false,
+          priority: job.opts.priority || 5,
+        });
+        await this.scanModel.findByIdAndUpdate(scanJobId, {
+          $inc: {
+            awaitingAnalysis: enqueued,
+            reposDiscovered: enqueued,
+            reposFound: enqueued,
+            reposTotal: enqueued,
+          },
+          $set: {
+            'checkpoint.stage': ScanCheckpointStage.ORCHESTRATED,
+            'checkpoint.updatedAt': new Date(),
+            message: `Re-analyzing ${enqueued} previously analyzed repositories`,
+          },
+        });
+        if (enqueued === 0) {
+          await this.scanState.markCompletedEarly(
+            scanJobId,
+            'No already-analyzed repositories match this scope',
+          );
+        }
+        return;
+      }
+
       // Internal audit: no search at all - exhaustively enumerate every
       // repo under the scoped brand's own trustedGithubOwners accounts and
       // send them straight to analysis. Fundamentally different from every
@@ -511,9 +558,9 @@ export class ScanOrchestratorProcessor extends WorkerHost {
         if (enqueued === 0) {
           const hasActivityWindow = Boolean(
             activityWindow.createdFrom ||
-              activityWindow.createdTo ||
-              activityWindow.pushedFrom ||
-              activityWindow.pushedTo,
+            activityWindow.createdTo ||
+            activityWindow.pushedFrom ||
+            activityWindow.pushedTo,
           );
           const message =
             ownerErrors.length > 0
@@ -594,7 +641,9 @@ export class ScanOrchestratorProcessor extends WorkerHost {
             : [];
         const scopeQuery = scan.scopeQuery;
         const qualifiersOrNone: Array<string | undefined> =
-          dateQualifierVariants.length > 0 ? dateQualifierVariants : [undefined];
+          dateQualifierVariants.length > 0
+            ? dateQualifierVariants
+            : [undefined];
         querySpecs = qualifiersOrNone.map((qualifier) => ({
           kind: scopeKind,
           family: 'custom',

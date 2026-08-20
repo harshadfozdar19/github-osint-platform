@@ -22,13 +22,19 @@ import {
   RepositoryContributor,
   RepositoryContributorDocument,
 } from '../repositories/schemas/repository-contributor.schema';
-import { FindingStatus, Severity, ThreatCategory } from '../common/enums';
+import {
+  FindingStatus,
+  FindingListStatus,
+  Severity,
+  ThreatCategory,
+} from '../common/enums';
 import {
   ThreatClass,
   categoriesForThreatClass,
   classifyThreat,
 } from '../common/threat-classification';
 import { UpdateFindingStatusDto } from './dto/update-finding-status.dto';
+import { UpdateFindingListStatusDto } from './dto/update-finding-list-status.dto';
 import { GitHubService } from '../github/github.service';
 import { getSecretPatternById } from '../detection/rules/secrets.rule';
 import {
@@ -47,6 +53,8 @@ export interface FindingFilters {
   origin?: 'internal' | 'external';
   brand?: string;
   status?: FindingStatus;
+  /** Analyst classification tag (watchlist/ignorelist/allowlist/blocklist) - independent of `status`. */
+  listStatus?: FindingListStatus;
   from?: Date;
   to?: Date;
   /**
@@ -120,6 +128,7 @@ export class FindingsService {
     }
     if (categoriesFilter !== undefined) query.categories = categoriesFilter;
     if (filters.status) query.status = filters.status;
+    if (filters.listStatus) query.listStatus = filters.listStatus;
     if (filters.brand) query.brandName = new RegExp(filters.brand, 'i');
     if (filters.from || filters.to) {
       query.createdAt = {};
@@ -399,6 +408,36 @@ export class FindingsService {
       finding.resolvedAt = undefined;
     }
 
+    await finding.save();
+    return this.getById(workspaceId, id);
+  }
+
+  /**
+   * Sets the analyst classification tag (watchlist/ignorelist/allowlist/
+   * blocklist) - a separate axis from `status` above (triage workflow
+   * state). See FindingListStatus for what each value means.
+   */
+  async updateListStatus(
+    workspaceId: string,
+    id: string,
+    dto: UpdateFindingListStatusDto,
+  ): Promise<Record<string, unknown>> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Finding not found');
+    }
+    if (!Object.values(FindingListStatus).includes(dto.listStatus)) {
+      throw new BadRequestException('Invalid list status');
+    }
+
+    const finding = await this.findingModel
+      .findOne({
+        _id: id,
+        workspaceId: new Types.ObjectId(workspaceId),
+      })
+      .exec();
+    if (!finding) throw new NotFoundException('Finding not found');
+
+    finding.listStatus = dto.listStatus;
     await finding.save();
     return this.getById(workspaceId, id);
   }

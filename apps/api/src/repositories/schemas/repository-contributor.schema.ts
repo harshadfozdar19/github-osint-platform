@@ -1,7 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
-export type RepositoryContributorDocument = HydratedDocument<RepositoryContributor>;
+export type RepositoryContributorDocument =
+  HydratedDocument<RepositoryContributor>;
 
 /**
  * One row per (repo, GitHub contributor) found during a real content-analysis

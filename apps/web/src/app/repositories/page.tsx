@@ -1,7 +1,6 @@
 ﻿'use client';
 
 import { FormEvent, Suspense, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
@@ -17,17 +16,9 @@ import {
   Modal,
   Pagination,
   Select,
-  SeverityBadge,
   TableSkeleton,
 } from '@/components/ui';
-import {
-  api,
-  Brand,
-  Paginated,
-  RecentRepositoryChanges,
-  Repository,
-  RepositoryBranch,
-} from '@/lib/api';
+import { api, Brand, Paginated, Repository, RepositoryBranch } from '@/lib/api';
 import { formatDate, formatDateTime } from '@/lib/date';
 
 type AnalysisFilter = 'all' | 'pending' | 'analyzed';
@@ -169,7 +160,6 @@ function RepositoriesPageInner() {
   const [page, setPage] = useState(1);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
-  const [recentChanges, setRecentChanges] = useState<RecentRepositoryChanges | null>(null);
 
   // "Branches" modal - GitHub's search index only ever covers a repo's
   // default branch, so this is the only way to check a side branch a search
@@ -215,9 +205,6 @@ function RepositoriesPageInner() {
   useEffect(() => {
     api<Brand[]>('/brands').then(setBrands).catch(() => undefined);
     api<string[]>('/scans/repositories/languages').then(setLanguages).catch(() => undefined);
-    api<RecentRepositoryChanges>('/scans/repositories/recent-changes?days=7&limit=8')
-      .then(setRecentChanges)
-      .catch(() => undefined);
   }, []);
 
   function buildParams(
@@ -339,7 +326,7 @@ function RepositoriesPageInner() {
           </div>
         ) : null}
 
-        <div className="xl:grid xl:grid-cols-[1fr_320px] xl:items-start xl:gap-6">
+        <div>
           <div className="min-w-0">
             <Card className="mb-6 p-4">
               <form onSubmit={onFilter} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -567,7 +554,13 @@ function RepositoriesPageInner() {
                         {formatDateTime(repo.createdAt)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
-                        {formatDate(repo.githubCreatedAt)}
+                        {repo.githubCreatedAt ? (
+                          formatDate(repo.githubCreatedAt)
+                        ) : (
+                          <span title="GitHub doesn't expose this for a code-search discovery, and a direct lookup didn't return one either.">
+                            Unknown
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
                         {formatDate(repo.githubPushedAt)}
@@ -594,88 +587,6 @@ function RepositoriesPageInner() {
               </>
             ) : null}
           </div>
-
-          {recentChanges &&
-          (recentChanges.recentPushes.length > 0 ||
-            recentChanges.recentFindingChanges.length > 0) ? (
-            <div className="mt-6 xl:mt-0">
-              <Card className="p-4">
-                <h3 className="mb-3 text-sm font-semibold text-[var(--muted)]">
-                  Recent changes (last 7 days)
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="mb-2 text-xs font-medium text-[var(--muted)]">
-                      Recently pushed on GitHub
-                    </p>
-                    {recentChanges.recentPushes.length === 0 ? (
-                      <p className="text-xs text-[var(--muted)]">No recent pushes.</p>
-                    ) : (
-                      <ul className="flex flex-col gap-1.5">
-                        {recentChanges.recentPushes.map((repo) => (
-                          <li
-                            key={repo._id}
-                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm"
-                          >
-                            <a
-                              href={repo.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block truncate font-medium text-[var(--accent)] hover:underline"
-                            >
-                              {repo.fullName}
-                            </a>
-                            <span className="text-xs text-[var(--muted)]">
-                              {formatDateTime(repo.githubPushedAt)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <div>
-                    <p
-                      className="mb-2 text-xs font-medium text-[var(--muted)]"
-                      title="A rescan just found something new, or something previously marked resolved came back - independent of how recently the code itself changed."
-                    >
-                      New / reopened findings
-                    </p>
-                    {recentChanges.recentFindingChanges.length === 0 ? (
-                      <p className="text-xs text-[var(--muted)]">No new or reopened findings.</p>
-                    ) : (
-                      <ul className="flex flex-col gap-1.5">
-                        {recentChanges.recentFindingChanges.map((f) => (
-                          <li
-                            key={f.findingId}
-                            className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm"
-                          >
-                            <Link
-                              href={`/findings/${f.findingId}`}
-                              className="block truncate font-medium text-[var(--accent)] hover:underline"
-                            >
-                              {f.repository.fullName}
-                            </Link>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <Badge
-                                tone={f.changeType === 'new' ? 'accent' : 'warning'}
-                                className="shrink-0"
-                              >
-                                {f.changeType === 'new' ? 'New' : 'Reopened'}
-                              </Badge>
-                              <SeverityBadge severity={f.severity} />
-                              <span className="text-xs text-[var(--muted)]">
-                                {formatDateTime(f.lastSeenAt)}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </div>
-          ) : null}
         </div>
 
         {branchesRepo ? (

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, setToken } from '@/lib/api';
+import { api, ApiError, setToken } from '@/lib/api';
 
 type Status = 'checking' | 'authorized';
 
@@ -30,8 +30,15 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     // /auth/me round-trip, and confirm it's still valid in the background.
     setStatus('authorized');
 
-    api('/auth/me').catch(() => {
-      if (!cancelled) {
+    api('/auth/me').catch((err) => {
+      if (cancelled) return;
+      // Only a real 401 means the token itself is invalid/expired - force a
+      // logout for that. Anything else (network blip, a transient 5xx from
+      // a DB hiccup or a mid-deploy restart, a timeout) says nothing about
+      // whether the token is still good, so keep the session and let the
+      // next successful request go through instead of silently signing
+      // everyone out over a backend hiccup that had nothing to do with auth.
+      if (err instanceof ApiError && err.status === 401) {
         setToken(null);
         router.replace('/login');
       }

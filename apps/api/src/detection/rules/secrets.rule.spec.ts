@@ -208,9 +208,9 @@ describe('secretDetectionRule', () => {
         'src/lib/r2/client.ts',
       ),
     );
-    expect(
-      r1.some((r) => r.ruleId === 'secret-high-entropy-assignment'),
-    ).toBe(false);
+    expect(r1.some((r) => r.ruleId === 'secret-high-entropy-assignment')).toBe(
+      false,
+    );
 
     const r2 = evaluate(
       baseCtx(
@@ -218,9 +218,9 @@ describe('secretDetectionRule', () => {
         'src/lib/r2/objects.ts',
       ),
     );
-    expect(
-      r2.some((r) => r.ruleId === 'secret-high-entropy-assignment'),
-    ).toBe(false);
+    expect(r2.some((r) => r.ruleId === 'secret-high-entropy-assignment')).toBe(
+      false,
+    );
   });
 
   it('still flags a real-looking generic API key assignment', () => {
@@ -236,9 +236,9 @@ describe('secretDetectionRule', () => {
     const apiKey = evaluate(
       baseCtx("api_key: 'your_api_key_placeholder_value'", 'README.md'),
     );
-    expect(
-      apiKey.some((r) => r.ruleId === 'secret-generic-api-token'),
-    ).toBe(false);
+    expect(apiKey.some((r) => r.ruleId === 'secret-generic-api-token')).toBe(
+      false,
+    );
 
     const accessToken = evaluate(
       baseCtx("access_token: 'sampleAccessToken'", 'README.md'),
@@ -252,9 +252,7 @@ describe('secretDetectionRule', () => {
     const results = evaluate(
       baseCtx('Authorization: Bearer sampleAccessToken', 'README.md'),
     );
-    expect(results.some((r) => r.ruleId === 'secret-bearer-token')).toBe(
-      false,
-    );
+    expect(results.some((r) => r.ruleId === 'secret-bearer-token')).toBe(false);
   });
 
   it('still flags a real-looking Bearer token', () => {
@@ -264,9 +262,7 @@ describe('secretDetectionRule', () => {
         'README.md',
       ),
     );
-    expect(results.some((r) => r.ruleId === 'secret-bearer-token')).toBe(
-      true,
-    );
+    expect(results.some((r) => r.ruleId === 'secret-bearer-token')).toBe(true);
   });
 
   it('does not flag a Docker/k8s-style "${VAR:-dev-default-change-in-production}" fallback as a leaked secret (regression)', () => {

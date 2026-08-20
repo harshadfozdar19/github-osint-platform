@@ -204,7 +204,7 @@ describe('GitHubHttpClient rate-limit management', () => {
     );
   });
 
-  it('refreshRateLimitSnapshot clears any stale pause/secondary state before re-syncing (regression: token rotation inheriting the old token\'s pause)', async () => {
+  it("refreshRateLimitSnapshot clears any stale pause/secondary state before re-syncing (regression: token rotation inheriting the old token's pause)", async () => {
     // scope is keyed by workspace id, not by token value, so swapping in a
     // brand-new token doesn't change the scope key - without clearing here,
     // a workspace whose old token got paused for exhaustion would still see

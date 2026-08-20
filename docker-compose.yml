@@ -2,6 +2,14 @@
 # Start with: docker compose up -d
 # (Requires Docker Desktop installed)
 
+# Pins the Compose project name so every service here is always managed
+# together as one unit (`docker compose stop/up/down` with no args) instead
+# of silently depending on whatever folder this file happens to be run
+# from - previously redis had drifted onto a different project name from an
+# older setup, so `docker compose stop` (scoped to the current project) was
+# skipping it entirely while still stopping mongo.
+name: assignment
+
 services:
   mongo:
     image: mongo:7

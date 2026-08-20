@@ -43,8 +43,7 @@ const PLACEHOLDER_PHRASE_RE =
 // case convention, so a segment containing even one digit never qualifies
 // as a camelCase identifier here and falls through to being treated as a
 // real value.
-const IDENTIFIER_SEGMENT_RE =
-  /^(?:[a-z][a-z0-9_]*|[A-Z][A-Z0-9_]*|[a-zA-Z]+)$/;
+const IDENTIFIER_SEGMENT_RE = /^(?:[a-z][a-z0-9_]*|[A-Z][A-Z0-9_]*|[a-zA-Z]+)$/;
 
 /**
  * True when a value is shaped like a source-code variable/attribute

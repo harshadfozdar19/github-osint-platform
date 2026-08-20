@@ -201,6 +201,8 @@ export interface Finding {
   /** 'internal' = found in the brand's own repo (rotate the credential). 'external' = found in someone else's repo (report/takedown). */
   origin?: 'internal' | 'external';
   status?: 'open' | 'acknowledged' | 'resolved' | 'false_positive';
+  /** Analyst classification tag - independent of `status` above. 'none' = unclassified. */
+  listStatus?: 'none' | 'watchlist' | 'ignorelist' | 'allowlist' | 'blocklist';
   lastChangeType?: 'new' | 'unchanged' | 'reopened' | 'resolved';
   triageNote?: string;
   triagedAt?: string;

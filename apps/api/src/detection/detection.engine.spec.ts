@@ -295,9 +295,9 @@ describe('DetectionEngine', () => {
   describe('suspiciousOwnerAccountRule', () => {
     it('does not fire when no owner-account data was fetched', () => {
       const results = engine.analyze(baseCtx());
-      expect(
-        results.some((r) => r.ruleId === 'suspicious-owner-account'),
-      ).toBe(false);
+      expect(results.some((r) => r.ruleId === 'suspicious-owner-account')).toBe(
+        false,
+      );
     });
 
     it('does not fire for an established owner account', () => {
@@ -308,9 +308,9 @@ describe('DetectionEngine', () => {
           ownerPublicRepos: 25,
         }),
       );
-      expect(
-        results.some((r) => r.ruleId === 'suspicious-owner-account'),
-      ).toBe(false);
+      expect(results.some((r) => r.ruleId === 'suspicious-owner-account')).toBe(
+        false,
+      );
     });
 
     it('fires MEDIUM for a brand-new, zero-follower, single-repo account (both signals)', () => {
@@ -346,9 +346,9 @@ describe('DetectionEngine', () => {
         }),
         { excludeRuleIds: IMPERSONATION_ONLY_RULE_IDS },
       );
-      expect(
-        results.some((r) => r.ruleId === 'suspicious-owner-account'),
-      ).toBe(false);
+      expect(results.some((r) => r.ruleId === 'suspicious-owner-account')).toBe(
+        false,
+      );
     });
   });
 
@@ -536,7 +536,10 @@ describe('brandImpersonationRule weak-keyword gating', () => {
     const result = brandImpersonationRule.evaluate(
       ctx({
         smallFileTexts: [
-          { path: 'src/scam.ts', content: 'const url = "phonepe-login.com"; // fake login page' },
+          {
+            path: 'src/scam.ts',
+            content: 'const url = "phonepe-login.com"; // fake login page',
+          },
         ],
       }),
     ) as DetectionResult | null;
@@ -765,8 +768,12 @@ describe('RiskScoringService', () => {
     // decayed - both get full, undiscounted points from the per-detection
     // formula regardless of what else (diversity/reputation bonuses) also
     // affects the total score.
-    expect(diverse.breakdown.find((b) => b.factor === 'AWS Access Key ID')?.points).toBe(34);
-    expect(diverse.breakdown.find((b) => b.factor === 'Phishing Indicators')?.points).toBe(33);
+    expect(
+      diverse.breakdown.find((b) => b.factor === 'AWS Access Key ID')?.points,
+    ).toBe(34);
+    expect(
+      diverse.breakdown.find((b) => b.factor === 'Phishing Indicators')?.points,
+    ).toBe(33);
   });
 
   it('does not discount a pure credential-exposure finding for high repo reputation', () => {

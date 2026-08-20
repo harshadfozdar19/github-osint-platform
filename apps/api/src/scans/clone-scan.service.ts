@@ -286,8 +286,35 @@ export class CloneScanService {
       return null;
     } finally {
       if (dir) {
-        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+        await this.cleanupCloneDir(dir);
       }
+    }
+  }
+
+  /**
+   * A cloned repo's directory is meant to be deleted the instant a scan is
+   * done with it - if that silently fails, the (often hundreds-of-MB)
+   * checkout just sits in the OS temp dir forever, invisibly eating disk.
+   * On Windows in particular, killing a still-running `git` process with
+   * SIGKILL (see runGitClone's timeout) doesn't guarantee its file handles
+   * are released the instant `kill()` returns - deleting immediately after
+   * can lose a race against that teardown and fail with EBUSY/EPERM.
+   * `maxRetries`/`retryDelay` make Node's own `rm` retry past exactly that
+   * transient window; logging on final failure (instead of the previous
+   * silent swallow) means a genuinely stuck clone is at least visible.
+   */
+  private async cleanupCloneDir(dir: string): Promise<void> {
+    try {
+      await rm(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 300,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to remove clone temp dir ${dir}: ${(error as Error).message}`,
+      );
     }
   }
 

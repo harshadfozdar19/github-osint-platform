@@ -185,7 +185,9 @@ describe('ScanStateService.finalize keyword-watch auto-restart', () => {
       scopeKeyword: 'otp bypass',
       scopeBrandId,
     });
-    scanQueue.enqueueManualScan.mockRejectedValueOnce(new Error('Brand not found'));
+    scanQueue.enqueueManualScan.mockRejectedValueOnce(
+      new Error('Brand not found'),
+    );
     await expect(service.finalize('scan-1')).resolves.toBeDefined();
   });
 });

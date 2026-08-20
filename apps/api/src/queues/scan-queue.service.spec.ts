@@ -475,15 +475,13 @@ describe('ScanQueueService', () => {
         brandId,
         keyword: 'otp bypass',
       });
-      const firstHash = (scanModel.create as jest.Mock).mock.calls[0][0]
-        .configHash as string;
+      const firstHash = scanModel.create.mock.calls[0][0].configHash as string;
 
       await service.enqueueManualScan(workspaceId, userId, {
         brandId,
         keyword: 'kite login',
       });
-      const secondHash = (scanModel.create as jest.Mock).mock.calls[1][0]
-        .configHash as string;
+      const secondHash = scanModel.create.mock.calls[1][0].configHash as string;
 
       expect(firstHash).not.toBe(secondHash);
     });

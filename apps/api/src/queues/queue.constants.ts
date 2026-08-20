@@ -27,6 +27,7 @@ export interface ScanOrchestratorJobData {
     | 'full'
     | 'failed_only'
     | 'analyze_pending'
+    | 'reanalyze_existing'
     | 'branch_analysis';
   forceFullScan?: boolean;
   rulesetVersion?: string;
@@ -43,6 +44,7 @@ export interface GitHubSearchJobData {
     | 'full'
     | 'failed_only'
     | 'analyze_pending'
+    | 'reanalyze_existing'
     | 'branch_analysis';
   forceFullScan?: boolean;
   rulesetVersion?: string;
@@ -82,6 +84,7 @@ export interface RepositoryAnalysisJobData {
     | 'full'
     | 'failed_only'
     | 'analyze_pending'
+    | 'reanalyze_existing'
     | 'branch_analysis';
   forceFullScan?: boolean;
   rulesetVersion?: string;
@@ -96,9 +99,10 @@ export interface RepositoryAnalysisJobData {
     fork: boolean;
     language: string | null;
     topics?: string[];
-    created_at: string;
+    /** Absent for a code-search discovery whose embedded repo object never includes this - see GitHubRepoSearchItem.created_at. Must not be defaulted to an arbitrary date; treat missing as unknown. */
+    created_at?: string;
     updated_at?: string;
-    pushed_at: string;
+    pushed_at?: string;
     owner: { login: string };
     name: string;
     default_branch?: string;

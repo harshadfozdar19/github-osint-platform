@@ -161,7 +161,12 @@ export class Repository {
    * discoveryKeyword itself is blank. Powers the Repositories page's
    * "only repos actually found via a keyword search" default.
    */
-  @Prop({ type: String, enum: ['internal', 'external'], default: 'external', index: true })
+  @Prop({
+    type: String,
+    enum: ['internal', 'external'],
+    default: 'external',
+    index: true,
+  })
   origin!: 'internal' | 'external';
 
   /**
@@ -242,4 +247,8 @@ RepositorySchema.index({ workspaceId: 1, pendingAnalysis: 1 });
 /** Backs the /repositories page's default "most recently discovered first" listing order. */
 RepositorySchema.index({ workspaceId: 1, createdAt: -1 });
 /** Backs the per-keyword "View" filter from the sequential scheduler. */
-RepositorySchema.index({ workspaceId: 1, discoveryBrandId: 1, discoveryKeyword: 1 });
+RepositorySchema.index({
+  workspaceId: 1,
+  discoveryBrandId: 1,
+  discoveryKeyword: 1,
+});

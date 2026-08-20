@@ -454,6 +454,62 @@ describe('KeywordRotationService', () => {
       expect(existingDoc.currentIndex).toBe(0);
     });
 
+    it('pauses the keyword whose slot just elapsed before handing off - a duration is a one-shot run, not an invitation to keep re-running it forever', async () => {
+      const currentScanJobId = new Types.ObjectId();
+      const slots: Array<{
+        brandId: string;
+        keyword: string;
+        durationMs: number;
+        paused?: boolean;
+      }> = [
+        { brandId, keyword: 'alpha', durationMs: 12_345 },
+        { brandId: otherBrandId, keyword: 'delta', durationMs: 30_000 },
+      ];
+      const existingDoc = buildDoc({
+        enabled: true,
+        slots,
+        currentIndex: 0,
+        currentScanJobId,
+        pendingAdvanceToken: 'tok-1',
+      });
+      const { service } = buildService({ existingDoc });
+
+      await service.advance(workspaceId, { token: 'tok-1' });
+
+      expect(slots[0].paused).toBe(true);
+      // The keyword it handed off to must NOT also come out paused.
+      expect(slots[1].paused).toBeUndefined();
+      expect(existingDoc.markModified).toHaveBeenCalledWith('slots');
+    });
+
+    it('disables the whole rotation once the only unpaused keyword finishes its own turn, instead of looping the same keyword forever', async () => {
+      const currentScanJobId = new Types.ObjectId();
+      const slots: Array<{
+        brandId: string;
+        keyword: string;
+        durationMs: number;
+        paused?: boolean;
+      }> = [{ brandId, keyword: 'alpha', durationMs: 300_000 }];
+      const existingDoc = buildDoc({
+        enabled: true,
+        slots,
+        currentIndex: 0,
+        currentScanJobId,
+        pendingAdvanceToken: 'tok-1',
+      });
+      const { service, scanQueue } = buildService({ existingDoc });
+
+      await service.advance(workspaceId, { token: 'tok-1' });
+
+      expect(slots[0].paused).toBe(true);
+      // Nothing left to run - startSlot's exhausted-queue branch takes over.
+      expect(scanQueue.enqueueManualScan).not.toHaveBeenCalled();
+      expect(existingDoc.enabled).toBe(false);
+      expect(existingDoc.lastError).toContain(
+        'Every keyword in the queue is paused',
+      );
+    });
+
     it("extends the current slot instead of handing off when the keyword's scan is still paused for GitHub quota - the whole point being that a slot that never got to do any real work shouldn't just be cut off on schedule anyway", async () => {
       const currentScanJobId = new Types.ObjectId();
       const existingDoc = buildDoc({

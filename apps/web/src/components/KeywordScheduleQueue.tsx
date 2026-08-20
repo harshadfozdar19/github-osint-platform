@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Badge, Button, Card } from '@/components/ui';
 import { api, ApiError, Brand, KeywordRotationSlot, KeywordRotationStatus } from '@/lib/api';
 
@@ -58,7 +59,14 @@ function slotKey(brandId: string, keyword: string): string {
   return `${brandId} ${keyword}`;
 }
 
-/** Strips display-only fields (paused) back down to what the start/add API actually accepts - searchScope/continueDiscovery are real inputs, so they're carried through. */
+/**
+ * Drops `paused` - used where the intent is "run this slot regardless of
+ * whatever it was doing before" (Start all keywords, and appending a queue
+ * entry that was never paused to begin with). Do NOT use this for anything
+ * that must preserve an existing slot's pause state - see
+ * toSlotInputPreservePaused, and its doc comment for why the distinction
+ * matters here specifically.
+ */
 function toSlotInput(slot: KeywordRotationSlot): KeywordRotationSlot {
   return {
     brandId: slot.brandId,
@@ -67,6 +75,19 @@ function toSlotInput(slot: KeywordRotationSlot): KeywordRotationSlot {
     searchScope: slot.searchScope,
     continueDiscovery: slot.continueDiscovery,
   };
+}
+
+/**
+ * Same as toSlotInput but keeps `paused` as-is. Start/add REPLACE-or-append
+ * the whole slot list server-side (KeywordRotationService.start/addSlots),
+ * so a slot left out of the payload isn't just skipped - it's deleted from
+ * the queue entirely. "Start the scan" must therefore always resend every
+ * already-configured slot (paused or not), and that only works without
+ * silently un-pausing everything if the paused ones say so explicitly - see
+ * KeywordRotationSlotDto.paused.
+ */
+function toSlotInputPreservePaused(slot: KeywordRotationSlot): KeywordRotationSlot {
+  return { ...toSlotInput(slot), paused: slot.paused === true };
 }
 
 const SEARCH_SCOPE_OPTIONS: { value: 'both' | 'repositories' | 'code'; label: string; title: string }[] = [
@@ -187,6 +208,13 @@ export function KeywordScheduleQueue({
   const [status, setStatus] = useState<KeywordRotationStatus | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
+  // Which of the two start actions `busy` covers right now - so the OTHER
+  // start button doesn't also flash a loading state it isn't responsible
+  // for. Not used for anything else that sets `busy` (stop, addToRunning).
+  const [busyAction, setBusyAction] = useState<'scan' | 'all' | null>(null);
+  // Toggles the "which keywords is Start the scan about to run" preview -
+  // collapsed by default so a long queue doesn't dominate the page.
+  const [scanPreviewOpen, setScanPreviewOpen] = useState(false);
   // Which single slot (by "brandId keyword") a pause/resume request is
   // in-flight for - independent of `busy`, which is only for the
   // whole-queue start/stop/add actions.
@@ -316,26 +344,16 @@ export function KeywordScheduleQueue({
     onQueueChange(queue.filter((_, i) => i !== index));
   }
 
-  /**
-   * Starts (or restarts) the scheduler with everything currently configured
-   * (status.slots, unpaused - a deliberate Start always means "run
-   * everything now") plus anything newly staged in `queue`. Used both for a
-   * brand-new queue and for resuming after a full stop, so a stopped
-   * rotation's existing keywords don't require re-building from scratch.
-   */
-  async function startOrRestart() {
-    const combined = [...(status?.slots.map(toSlotInput) ?? []), ...queue];
-    if (combined.length === 0) {
-      setError('Add at least one keyword to the queue first.');
-      return;
-    }
+  /** Shared POST for both start actions below - only what slots to send differs between them. */
+  async function runStart(slots: KeywordRotationSlot[], action: 'scan' | 'all') {
     setBusy(true);
+    setBusyAction(action);
     setError('');
     try {
       const result = await api<KeywordRotationStatus>('/scans/keyword-rotation/start', {
         method: 'POST',
         body: JSON.stringify({
-          slots: combined,
+          slots,
           dateFilterMode: dateMode,
           ...(dateMode === 'dated' && from ? { createdFrom: from, pushedFrom: from } : {}),
           ...(dateMode === 'dated' && to ? { createdTo: to, pushedTo: to } : {}),
@@ -347,7 +365,51 @@ export function KeywordScheduleQueue({
       setError(err instanceof ApiError ? err.message : 'Failed to start scheduler');
     } finally {
       setBusy(false);
+      setBusyAction(null);
     }
+  }
+
+  /**
+   * Starts the scheduler with exactly `scanSlots` (see below the return
+   * statement's data prep) - the already-unpaused configured keywords plus
+   * anything newly staged in `queue`, i.e. what would actually run,
+   * previewable via the "View keywords to start" disclosure before
+   * committing.
+   *
+   * `previewSlots` (unpaused-only) is just for the empty-queue check - the
+   * REAL payload sent is `payloadSlots`, which must include every
+   * already-configured slot regardless of pause state (with its real
+   * paused value preserved via toSlotInputPreservePaused). start() replaces
+   * the whole rotation rather than merging into it
+   * (KeywordRotationService.start), so leaving a paused slot out of the
+   * payload here wouldn't just skip it - it would delete it from the queue
+   * entirely. That was a real, shipped bug: adding one new keyword while
+   * anything else was paused silently wiped every paused slot.
+   */
+  async function startScan(
+    previewSlots: KeywordRotationSlot[],
+    payloadSlots: KeywordRotationSlot[],
+  ) {
+    if (previewSlots.length === 0) {
+      setError(
+        'Nothing to start - every configured keyword is paused and nothing new is queued. Resume at least one, or use "Start all keywords."',
+      );
+      return;
+    }
+    await runStart(payloadSlots, 'scan');
+  }
+
+  /**
+   * Starts the scheduler with EVERY configured keyword (paused or not) plus
+   * anything newly staged in `queue` - un-pauses the whole queue in one go.
+   */
+  async function startAll() {
+    const combined = [...(status?.slots.map(toSlotInput) ?? []), ...queue];
+    if (combined.length === 0) {
+      setError('Add at least one keyword to the queue first.');
+      return;
+    }
+    await runStart(combined, 'all');
   }
 
   async function stop() {
@@ -501,6 +563,22 @@ export function KeywordScheduleQueue({
     isRunning && status?.slotEndsAt
       ? Math.max(0, new Date(status.slotEndsAt).getTime() - now)
       : 0;
+  // What "Start the scan" would actually RUN - every already-unpaused
+  // configured keyword, plus anything newly staged. Drives the preview
+  // disclosure, the button's own count, and its disabled state.
+  const scanPreviewSlots: KeywordRotationSlot[] = [
+    ...(status?.slots.filter((s) => !s.paused).map(toSlotInput) ?? []),
+    ...queue,
+  ];
+  // What actually gets SENT when "Start the scan" is clicked - every
+  // configured slot, paused or not (with its real paused value preserved),
+  // plus anything newly staged. Must include the paused ones too, or
+  // start() (a full replace, not a merge) would delete them outright - see
+  // toSlotInputPreservePaused.
+  const scanPayloadSlots: KeywordRotationSlot[] = [
+    ...(status?.slots.map(toSlotInputPreservePaused) ?? []),
+    ...queue,
+  ];
 
   return (
     <Card className="mb-6">
@@ -801,13 +879,73 @@ export function KeywordScheduleQueue({
                 ) : null}
               </div>
               {hasConfiguredSlots || queue.length > 0 ? (
-                <Button type="button" onClick={startOrRestart} loading={busy} className="mt-3">
-                  {busy
-                    ? 'Starting…'
-                    : hasConfiguredSlots
-                      ? `Start scheduler${queue.length > 0 ? ` (+${queue.length} more)` : ''}`
-                      : 'Start scheduler'}
-                </Button>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setScanPreviewOpen((v) => !v)}
+                    className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--accent)] hover:underline"
+                    aria-expanded={scanPreviewOpen}
+                  >
+                    {scanPreviewOpen ? (
+                      <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                    )}
+                    View keyword{scanPreviewSlots.length === 1 ? '' : 's'} to start (
+                    {scanPreviewSlots.length})
+                  </button>
+                  {scanPreviewOpen ? (
+                    <div className="mb-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2">
+                      {scanPreviewSlots.length === 0 ? (
+                        <p className="px-1 py-0.5 text-xs text-[var(--muted)]">
+                          Nothing would start - every configured keyword is paused and nothing new
+                          is queued.
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-1">
+                          {scanPreviewSlots.map((s, i) => (
+                            <li
+                              key={`${s.brandId}-${s.keyword}-${i}`}
+                              className="flex flex-wrap items-center gap-2 px-1 py-0.5 text-xs"
+                            >
+                              <span className="text-[var(--muted)]">
+                                {brandNameById.get(s.brandId) ?? 'Unknown company'}
+                              </span>
+                              <span className="font-[family-name:var(--font-mono)]">
+                                {s.keyword}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => startScan(scanPreviewSlots, scanPayloadSlots)}
+                      loading={busy && busyAction === 'scan'}
+                      disabled={busy || scanPreviewSlots.length === 0}
+                      title="Starts every already-unpaused configured keyword, plus anything just added below - paused keywords stay paused, not deleted"
+                    >
+                      {busy && busyAction === 'scan' ? 'Starting…' : 'Start the scan'}
+                    </Button>
+                    {hasConfiguredSlots ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={startAll}
+                        loading={busy && busyAction === 'all'}
+                        disabled={busy}
+                        title="Starts every configured keyword, including paused ones, plus anything just added below"
+                      >
+                        {busy && busyAction === 'all'
+                          ? 'Starting…'
+                          : `Start all keywords (${(status?.slots.length ?? 0) + queue.length})`}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
               ) : null}
             </>
           )}

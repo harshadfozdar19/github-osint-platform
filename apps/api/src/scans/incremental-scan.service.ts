@@ -523,6 +523,72 @@ export class IncrementalScanService {
       .exec();
   }
 
+  /**
+   * The opposite backlog from buildPendingAnalysisFilter: repos that have
+   * ALREADY been analyzed, for ScanMode.REANALYZE_EXISTING - re-checking
+   * them against a brand's CURRENT keyword list after it's changed since
+   * they were last analyzed. `origin: 'external'` matches ANALYZE_PENDING's
+   * implicit scope (internal audits never leave a repo pendingAnalysis, but
+   * they're real Repository docs with pendingAnalysis:false too, and have
+   * their own dedicated re-audit flow - this option is specifically for the
+   * external "someone mentions this brand" discovery backlog).
+   */
+  private buildAnalyzedFilter(
+    workspaceId: string,
+    options: {
+      brandId?: string;
+      discoveredFrom?: Date;
+      discoveredTo?: Date;
+    } = {},
+  ) {
+    const filter: Record<string, unknown> = {
+      workspaceId: new Types.ObjectId(workspaceId),
+      pendingAnalysis: false,
+      origin: 'external',
+    };
+    if (options.brandId) {
+      filter.discoveryBrandId = new Types.ObjectId(options.brandId);
+    }
+    if (options.discoveredFrom || options.discoveredTo) {
+      const range: Record<string, Date> = {};
+      if (options.discoveredFrom) range.$gte = options.discoveredFrom;
+      if (options.discoveredTo) range.$lte = options.discoveredTo;
+      filter.createdAt = range;
+    }
+    return filter;
+  }
+
+  /** Every already-analyzed repo eligible for a keyword-driven re-analysis - see ScanMode.REANALYZE_EXISTING. Optionally narrowed to one brand and/or a discovered-date window instead of the whole workspace. */
+  async listAnalyzedGithubIds(
+    workspaceId: string,
+    options: {
+      brandId?: string;
+      discoveredFrom?: Date;
+      discoveredTo?: Date;
+    } = {},
+  ): Promise<number[]> {
+    const docs = await this.repoModel
+      .find(this.buildAnalyzedFilter(workspaceId, options))
+      .select('githubId')
+      .lean()
+      .exec();
+    return docs.map((d) => d.githubId);
+  }
+
+  /** Cheap count for "N already-analyzed repos eligible for re-analysis" UI, without loading every id. Same optional brand/date narrowing as listAnalyzedGithubIds. */
+  async countAnalyzed(
+    workspaceId: string,
+    options: {
+      brandId?: string;
+      discoveredFrom?: Date;
+      discoveredTo?: Date;
+    } = {},
+  ): Promise<number> {
+    return this.repoModel
+      .countDocuments(this.buildAnalyzedFilter(workspaceId, options))
+      .exec();
+  }
+
   logDecision(githubId: number, fullName: string, decision: ChangeDecision) {
     this.logger.log(
       JSON.stringify({

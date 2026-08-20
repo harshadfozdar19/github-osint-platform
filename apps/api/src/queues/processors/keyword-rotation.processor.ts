@@ -1,7 +1,10 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { QUEUE_KEYWORD_ROTATION, KeywordRotationJobData } from '../queue.constants';
+import {
+  QUEUE_KEYWORD_ROTATION,
+  KeywordRotationJobData,
+} from '../queue.constants';
 import { KeywordRotationService } from '../../scans/keyword-rotation.service';
 import { safeJobError } from '../queue.utils';
 import { sharedWorkerTuning } from '../queue.utils';

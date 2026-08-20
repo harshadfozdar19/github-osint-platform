@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FindingsService } from './findings.service';
 import {
   FindingStatus,
+  FindingListStatus,
   Severity,
   ThreatCategory,
   WORKSPACE_HEADER,
@@ -31,6 +32,7 @@ import type { TenantContext } from '../tenancy/tenancy.decorators';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/current-user.decorator';
 import { UpdateFindingStatusDto } from './dto/update-finding-status.dto';
+import { UpdateFindingListStatusDto } from './dto/update-finding-list-status.dto';
 
 @ApiTags('findings')
 @ApiBearerAuth()
@@ -54,6 +56,13 @@ export class FindingsController {
   })
   @ApiQuery({ name: 'status', required: false, enum: FindingStatus })
   @ApiQuery({
+    name: 'listStatus',
+    required: false,
+    enum: FindingListStatus,
+    description:
+      'Analyst classification tag (watchlist/ignorelist/allowlist/blocklist) - independent of status',
+  })
+  @ApiQuery({
     name: 'origin',
     required: false,
     enum: ['internal', 'external'],
@@ -64,7 +73,8 @@ export class FindingsController {
   @ApiQuery({
     name: 'from',
     required: false,
-    description: 'Findings first recorded on/after this date (our own discovery time, not GitHub activity)',
+    description:
+      'Findings first recorded on/after this date (our own discovery time, not GitHub activity)',
   })
   @ApiQuery({ name: 'to', required: false })
   @ApiQuery({
@@ -91,6 +101,7 @@ export class FindingsController {
     @Query('category') category?: ThreatCategory,
     @Query('threatClass') threatClass?: ThreatClass,
     @Query('status') status?: FindingStatus,
+    @Query('listStatus') listStatus?: FindingListStatus,
     @Query('origin') origin?: 'internal' | 'external',
     @Query('brand') brand?: string,
     @Query('from') from?: string,
@@ -110,6 +121,7 @@ export class FindingsController {
       category,
       threatClass,
       status,
+      listStatus,
       origin,
       brand,
       from: from ? new Date(from) : undefined,
@@ -180,5 +192,18 @@ export class FindingsController {
       user.id,
       dto,
     );
+  }
+
+  @Patch(':id/list-status')
+  @ApiOperation({
+    summary:
+      'Classify a finding into a watch/ignore/allow/block list - independent of the triage status above',
+  })
+  updateListStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id') id: string,
+    @Body() dto: UpdateFindingListStatusDto,
+  ) {
+    return this.findingsService.updateListStatus(tenant.workspaceId, id, dto);
   }
 }

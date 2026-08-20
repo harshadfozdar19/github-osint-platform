@@ -265,14 +265,17 @@ export class ScansController {
   })
   @ApiQuery({ name: 'days', required: false, example: '7' })
   @ApiQuery({ name: 'limit', required: false, example: '8' })
+  @ApiQuery({ name: 'brandId', required: false })
   async getRecentChanges(
     @CurrentTenant() tenant: TenantContext,
     @Query('days') days?: string,
     @Query('limit') limit?: string,
+    @Query('brandId') brandId?: string,
   ) {
     return this.scansService.getRecentChanges(tenant.workspaceId, {
       days: days ? Number(days) : undefined,
       limit: limit ? Number(limit) : undefined,
+      brandId: brandId || undefined,
     });
   }
 
@@ -330,6 +333,28 @@ export class ScansController {
         discoveredTo: discoveredTo ? new Date(discoveredTo) : undefined,
       },
     );
+    return { count };
+  }
+
+  @Get('analyzed-count')
+  @ApiOperation({
+    summary:
+      'Count of already-analyzed repos eligible for a keyword-driven re-analysis - for the "Re-analyze existing repositories" action (ScanMode.REANALYZE_EXISTING). Optionally narrowed to one brand and/or a discovered-date window, matching whatever scope the actual reanalyze_existing run would use.',
+  })
+  @ApiQuery({ name: 'brandId', required: false })
+  @ApiQuery({ name: 'discoveredFrom', required: false })
+  @ApiQuery({ name: 'discoveredTo', required: false })
+  async analyzedCount(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('brandId') brandId?: string,
+    @Query('discoveredFrom') discoveredFrom?: string,
+    @Query('discoveredTo') discoveredTo?: string,
+  ) {
+    const count = await this.scansService.countAnalyzed(tenant.workspaceId, {
+      brandId,
+      discoveredFrom: discoveredFrom ? new Date(discoveredFrom) : undefined,
+      discoveredTo: discoveredTo ? new Date(discoveredTo) : undefined,
+    });
     return { count };
   }
 

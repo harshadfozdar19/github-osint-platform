@@ -36,6 +36,19 @@ export enum ScanMode {
   /** Skips search entirely and runs content analysis on every repo a prior discoveryOnly scan found but deferred - see ScanJob.discoveryOnly. */
   ANALYZE_PENDING = 'analyze_pending',
   /**
+   * Skips search entirely and re-runs full content analysis on repos that
+   * were ALREADY analyzed before - the opposite backlog from
+   * ANALYZE_PENDING. For when a brand's keyword list changed after those
+   * repos were last analyzed: detection re-evaluates against whatever
+   * MonitoredBrand.keywords holds right now, so a keyword added after the
+   * fact never gets checked against already-analyzed repos otherwise -
+   * their incremental "unchanged, skip" decision has nothing to do with
+   * keywords changing, only with the repo's own code changing. Always
+   * forces a full re-scan (bypasses that incremental skip) since the whole
+   * point is to re-check content that's presumed unchanged.
+   */
+  REANALYZE_EXISTING = 'reanalyze_existing',
+  /**
    * On-demand: clones and scans exactly ONE already-known repository's ONE
    * specific non-default branch, deliberately outside the normal
    * search/incremental machinery - GitHub's search index only ever covers a
@@ -94,6 +107,23 @@ export enum FindingStatus {
   ACKNOWLEDGED = 'acknowledged',
   RESOLVED = 'resolved',
   FALSE_POSITIVE = 'false_positive',
+}
+
+/**
+ * Analyst-assigned classification, independent of the workflow `status`
+ * above - status tracks "where is this in triage" (open → resolved),
+ * listStatus tracks "how do we feel about this repo/finding going forward"
+ * (worth watching, safe to ignore, confirmed legitimate, confirmed
+ * malicious). A finding can be RESOLVED and BLOCKLISTed at the same time -
+ * these answer different questions. See Findings page for the color coding
+ * (watchlist=yellow, ignorelist=grey, allowlist=green, blocklist=red).
+ */
+export enum FindingListStatus {
+  NONE = 'none',
+  WATCHLIST = 'watchlist',
+  IGNORELIST = 'ignorelist',
+  ALLOWLIST = 'allowlist',
+  BLOCKLIST = 'blocklist',
 }
 
 export enum WorkspaceRole {

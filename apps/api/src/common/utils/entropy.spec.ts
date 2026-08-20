@@ -57,9 +57,9 @@ describe('looksLikePlaceholderValue', () => {
     expect(looksLikePlaceholderValue('your_api_key')).toBe(true);
     expect(looksLikePlaceholderValue('sampleAccessToken')).toBe(true);
     expect(looksLikePlaceholderValue('changeme')).toBe(true);
-    expect(looksLikePlaceholderValue('dev-secret-key-change-in-production')).toBe(
-      true,
-    );
+    expect(
+      looksLikePlaceholderValue('dev-secret-key-change-in-production'),
+    ).toBe(true);
   });
 
   it('does not flag a real-looking secret value', () => {

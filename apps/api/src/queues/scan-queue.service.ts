@@ -355,17 +355,19 @@ export class ScanQueueService {
         ? new Date(options.createdFrom)
         : undefined,
       createdTo: options.createdTo ? new Date(options.createdTo) : undefined,
-      pushedFrom: options.pushedFrom
-        ? new Date(options.pushedFrom)
-        : undefined,
+      pushedFrom: options.pushedFrom ? new Date(options.pushedFrom) : undefined,
       pushedTo: options.pushedTo ? new Date(options.pushedTo) : undefined,
       dateFilterMode: options.dateFilterMode === 'or' ? 'or' : 'and',
       discoveredFrom:
-        mode === ScanMode.ANALYZE_PENDING && options.discoveredFrom
+        (mode === ScanMode.ANALYZE_PENDING ||
+          mode === ScanMode.REANALYZE_EXISTING) &&
+        options.discoveredFrom
           ? new Date(options.discoveredFrom)
           : undefined,
       discoveredTo:
-        mode === ScanMode.ANALYZE_PENDING && options.discoveredTo
+        (mode === ScanMode.ANALYZE_PENDING ||
+          mode === ScanMode.REANALYZE_EXISTING) &&
+        options.discoveredTo
           ? new Date(options.discoveredTo)
           : undefined,
       continueDiscovery: options.continueDiscovery === true,

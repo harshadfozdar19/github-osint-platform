@@ -326,6 +326,24 @@ export class GitHubSearchProcessor extends WorkerHost {
           );
           if (!claimed) continue;
 
+          // Code search's embedded `repository` object never includes
+          // created_at/pushed_at (see GitHubRepoSearchItem.created_at) - now
+          // that this repo is confirmed as a genuinely new discovery (not
+          // just any search hit - claimRepositoryForAnalysis above already
+          // deduped it), it's worth one direct repo-metadata fetch to get
+          // the real dates instead of leaving the UI to show "1 Jan 1970."
+          // Best-effort: getRepositoryTimestamps never throws, so a failed
+          // fetch just leaves the date unknown rather than failing this scan.
+          if (searchKind === 'code' && !item.created_at) {
+            const timestamps = await this.github.getRepositoryTimestamps(
+              item.owner.login,
+              item.name,
+              { workspaceId, scanJobId, signal: abort.signal },
+            );
+            if (timestamps?.createdAt) item.created_at = timestamps.createdAt;
+            if (timestamps?.pushedAt) item.pushed_at = timestamps.pushedAt;
+          }
+
           // Discovery-only: record the repo (metadata already in hand from
           // this search response - no extra GitHub call) and stop right
           // here. No clone, no file fetch, no detection, no finding - it's

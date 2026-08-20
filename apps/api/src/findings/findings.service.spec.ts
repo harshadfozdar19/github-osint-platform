@@ -1,7 +1,11 @@
 import { Types } from 'mongoose';
 import { NotFoundException } from '@nestjs/common';
 import { FindingsService } from './findings.service';
-import { FindingStatus, ThreatCategory } from '../common/enums';
+import {
+  FindingListStatus,
+  FindingStatus,
+  ThreatCategory,
+} from '../common/enums';
 
 describe('FindingsService.getById', () => {
   it('queries detections with findingId cast to a real ObjectId, not a string', async () => {
@@ -330,7 +334,11 @@ describe('FindingsService.getContributors', () => {
       .mockReturnValueOnce({
         lean: jest.fn().mockReturnThis(),
         exec: jest.fn().mockResolvedValue([
-          { login: 'shared-dev', avatarUrl: 'https://x/a.png', contributions: 12 },
+          {
+            login: 'shared-dev',
+            avatarUrl: 'https://x/a.png',
+            contributions: 12,
+          },
         ]),
       })
       .mockReturnValueOnce({
@@ -361,7 +369,10 @@ describe('FindingsService.getContributors', () => {
         avatarUrl: 'https://x/a.png',
         contributions: 12,
         otherRepositories: [
-          { repositoryId: String(otherRepositoryId), fullName: 'other-owner/evil-clone' },
+          {
+            repositoryId: String(otherRepositoryId),
+            fullName: 'other-owner/evil-clone',
+          },
         ],
       },
     ]);
@@ -494,12 +505,14 @@ describe('FindingsService.list deployment filter', () => {
       {} as never,
       {} as never,
     );
-    return { service };
+    return { service, findSpy };
   }
 
   it('filters repos by deployment presence when hasDeployment=true', async () => {
     const repoFindSpy = jest.fn().mockReturnValue({
-      distinct: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+      distinct: jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
     });
     const { service } = buildService(repoFindSpy);
     await service.list({
@@ -512,7 +525,9 @@ describe('FindingsService.list deployment filter', () => {
 
   it('filters repos to "not defined" when hasDeployment=false', async () => {
     const repoFindSpy = jest.fn().mockReturnValue({
-      distinct: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+      distinct: jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
     });
     const { service } = buildService(repoFindSpy);
     await service.list({
@@ -521,6 +536,33 @@ describe('FindingsService.list deployment filter', () => {
     });
     const repoFilter = repoFindSpy.mock.calls[0][0] as { deployment?: unknown };
     expect(repoFilter.deployment).toBeNull();
+  });
+
+  it('filters findings by the analyst listStatus tag when given', async () => {
+    const repoFindSpy = jest.fn().mockReturnValue({
+      distinct: jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+    });
+    const { service, findSpy } = buildService(repoFindSpy);
+    await service.list({
+      workspaceId: new Types.ObjectId().toHexString(),
+      listStatus: FindingListStatus.BLOCKLIST,
+    });
+    const query = findSpy.mock.calls[0][0] as { listStatus?: unknown };
+    expect(query.listStatus).toBe(FindingListStatus.BLOCKLIST);
+  });
+
+  it('omits the listStatus filter entirely when not given', async () => {
+    const repoFindSpy = jest.fn().mockReturnValue({
+      distinct: jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+    });
+    const { service, findSpy } = buildService(repoFindSpy);
+    await service.list({ workspaceId: new Types.ObjectId().toHexString() });
+    const query = findSpy.mock.calls[0][0] as { listStatus?: unknown };
+    expect(query.listStatus).toBeUndefined();
   });
 });
 
@@ -681,6 +723,61 @@ describe('FindingsService.updateStatus', () => {
         { status: 'not-a-real-status' as FindingStatus },
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('FindingsService.updateListStatus', () => {
+  it('rejects an invalid list status value', async () => {
+    const service = new FindingsService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.updateListStatus(
+        new Types.ObjectId().toHexString(),
+        new Types.ObjectId().toHexString(),
+        { listStatus: 'not-a-real-list-status' as FindingListStatus },
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('saves the new listStatus onto the finding, independent of status', async () => {
+    const workspaceId = new Types.ObjectId().toHexString();
+    const findingId = new Types.ObjectId().toHexString();
+    const saveSpy = jest.fn().mockResolvedValue(undefined);
+    const finding: { listStatus?: FindingListStatus; save: jest.Mock } = {
+      listStatus: FindingListStatus.NONE,
+      save: saveSpy,
+    };
+    const findingModel = {
+      findOne: jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue(finding) }),
+    };
+    const service = new FindingsService(
+      findingModel as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    // getById is called at the end to return the fresh finding - stub it out
+    // so this test only exercises the write path.
+    jest.spyOn(service, 'getById').mockResolvedValue({});
+
+    await service.updateListStatus(workspaceId, findingId, {
+      listStatus: FindingListStatus.ALLOWLIST,
+    });
+
+    expect(finding.listStatus).toBe(FindingListStatus.ALLOWLIST);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
   });
 });
 
