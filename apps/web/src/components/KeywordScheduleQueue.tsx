@@ -625,31 +625,36 @@ export function KeywordScheduleQueue({
           <>
             {isRunning ? (
               <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Card className="px-4 py-3">
+                {/* min-w-0 on every card - without it, a grid item's default
+                    min-content sizing lets long unbroken text (a long
+                    keyword name, especially in a monospace font) push the
+                    card wider than its column instead of wrapping inside
+                    it, spilling text out past the card's own border. */}
+                <Card className="min-w-0 px-4 py-3">
                   <p className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
                     Now running
                   </p>
-                  <p className="mt-1 text-lg font-semibold font-[family-name:var(--font-mono)]">
+                  <p className="mt-1 break-words text-lg font-semibold font-[family-name:var(--font-mono)]">
                     {status.currentKeyword ?? '—'}
                   </p>
-                  <p className="text-xs text-[var(--muted)]">
+                  <p className="break-words text-xs text-[var(--muted)]">
                     {(status.currentBrandId && brandNameById.get(status.currentBrandId)) ?? ''}
                   </p>
                 </Card>
-                <Card className="px-4 py-3">
+                <Card className="min-w-0 px-4 py-3">
                   <p className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
                     Next handoff in
                   </p>
                   <p className="mt-1 text-lg font-semibold">{formatHms(remainingMs)}</p>
                   {status.waitingOnQuota ? (
                     <span title="This keyword's scan is paused waiting on GitHub's rate limit or daily quota - its slot is being extended instead of cut off having made no progress, up to a few times before handing off anyway.">
-                      <Badge tone="warning" className="mt-1.5">
+                      <Badge tone="warning" className="mt-1.5" wrap>
                         Waiting on GitHub quota
                       </Badge>
                     </span>
                   ) : null}
                 </Card>
-                <Card className="px-4 py-3">
+                <Card className="min-w-0 px-4 py-3">
                   <p className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
                     Cycles completed
                   </p>

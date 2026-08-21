@@ -7,6 +7,7 @@ import {
   Activity,
   AlertTriangle,
   Boxes,
+  GitCommitHorizontal,
   History,
   KeyRound,
   LayoutDashboard,
@@ -31,6 +32,7 @@ const nav = [
   { href: '/activity', label: 'Recent Activity', icon: History },
   { href: '/findings', label: 'Findings', icon: Shield },
   { href: '/contributors', label: 'Contributors', icon: Users },
+  { href: '/commit-history', label: 'Commit History', icon: GitCommitHorizontal },
   { href: '/search', label: 'Search', icon: Search },
   { href: '/alerts', label: 'Alerts', icon: AlertTriangle },
 ];
@@ -90,7 +92,7 @@ export function AppShell({
 
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-y-auto border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-4 py-6 shadow-xl transition-transform duration-200 ease-out',
+          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-y-auto border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-4 py-4 shadow-xl transition-transform duration-200 ease-out',
           // Pinned to the viewport and independently scrollable - without
           // this, a CSS grid row stretches to match whatever the main
           // content's height is on that particular page, which drags this
@@ -102,7 +104,7 @@ export function AppShell({
           mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="mb-6 flex items-start justify-between px-1">
+        <div className="mb-4 flex items-start justify-between px-1">
           <Logo />
           <button
             type="button"
@@ -115,16 +117,16 @@ export function AppShell({
           </button>
         </div>
 
-        <div className="mb-5">
+        <div className="mb-3">
           <WorkspaceSwitcher />
         </div>
 
-        <nav className="flex-1 space-y-1" aria-label="Main">
+        <nav className="flex-1 space-y-0.5" aria-label="Main">
           {nav.map((item) => (
             <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
           ))}
 
-          <p className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-white">
+          <p className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-white">
             Configuration
           </p>
           {configNav.map((item) => (
@@ -134,7 +136,7 @@ export function AppShell({
 
         <button
           type="button"
-          className="mt-6 flex w-full items-center gap-3 rounded-lg bg-[var(--sidebar-card-bg)] px-3 py-2.5 text-sm font-medium text-white transition-colors duration-150 hover:bg-[var(--sidebar-card-hover-bg)]"
+          className="mt-4 flex w-full items-center gap-3 rounded-lg bg-[var(--sidebar-card-bg)] px-3 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-[var(--sidebar-card-hover-bg)]"
           onClick={() => {
             setToken(null);
             router.push('/');
@@ -186,7 +188,7 @@ function NavLink({
       href={item.href}
       style={{ color: '#ffffff' }}
       className={clsx(
-        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150',
+        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150',
         active
           ? 'bg-[var(--sidebar-active-bg)] shadow-sm'
           : 'bg-[var(--sidebar-card-bg)] hover:bg-[var(--sidebar-card-hover-bg)]',

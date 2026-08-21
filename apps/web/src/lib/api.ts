@@ -283,6 +283,15 @@ export interface ContributorSummary {
   repositories: ContributorRepoSummary[];
 }
 
+/** A manually-tracked GitHub username - see the Commit History page. Stores no commit data itself, just a ready-made link to GitHub's own commit search for that author. */
+export interface TrackedGithubUser {
+  _id: string;
+  username: string;
+  note?: string;
+  commitSearchUrl: string;
+  createdAt?: string;
+}
+
 export interface Repository {
   _id: string;
   fullName: string;
