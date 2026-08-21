@@ -15,7 +15,11 @@ import { ScanQueueService } from '../queues/scan-queue.service';
 import type { ManualScanOptions } from '../queues/scan-queue.service';
 import { IncrementalScanService } from './incremental-scan.service';
 import { GitHubService } from '../github/github.service';
-import { FindingChangeType, ScanJobStatus } from '../common/enums';
+import {
+  FindingChangeType,
+  FindingStatus,
+  ScanJobStatus,
+} from '../common/enums';
 import { buildQueryFamilies } from './discovery/query-families';
 import {
   KeywordRotationService,
@@ -201,6 +205,84 @@ export class ScansService {
     } = {},
   ): Promise<number> {
     return this.incremental.countAnalyzed(workspaceId, options);
+  }
+
+  /**
+   * Matches exactly the findings a backfillIntentAssessments run with the
+   * same options would queue - external-origin only (mirrors the live
+   * pipeline trigger's own exclusion of internal audits, which the intent
+   * prompt isn't shaped for), never already AI-scored, and never a
+   * dismissed false positive (no value re-scoring something an analyst
+   * already ruled out).
+   */
+  private buildUnassessedFindingsFilter(
+    workspaceId: string,
+    options: { brandId?: string; discoveredFrom?: Date; discoveredTo?: Date },
+  ): FilterQuery<FindingDocument> {
+    const filter: Record<string, unknown> = {
+      workspaceId: new Types.ObjectId(workspaceId),
+      origin: 'external',
+      scoringSource: { $ne: 'ai' },
+      status: { $ne: FindingStatus.FALSE_POSITIVE },
+    };
+    if (options.brandId) filter.brandId = new Types.ObjectId(options.brandId);
+    if (options.discoveredFrom || options.discoveredTo) {
+      const range: Record<string, Date> = {};
+      if (options.discoveredFrom) range.$gte = options.discoveredFrom;
+      if (options.discoveredTo) range.$lte = options.discoveredTo;
+      filter.createdAt = range;
+    }
+    return filter;
+  }
+
+  /** How many existing findings are eligible for an AI backfill right now - powers the "Backfill AI assessments" button's live count. */
+  countUnassessedFindings(
+    workspaceId: string,
+    options: {
+      brandId?: string;
+      discoveredFrom?: Date;
+      discoveredTo?: Date;
+    } = {},
+  ): Promise<number> {
+    return this.findingModel
+      .countDocuments(this.buildUnassessedFindingsFilter(workspaceId, options))
+      .exec();
+  }
+
+  /**
+   * Queues an AI intent assessment for up to `maxFindings` existing
+   * findings that have never been assessed - the only way to get an AI
+   * score onto a finding that predates this feature, since a plain rescan
+   * of an already-analyzed repo just reproduces the same finding
+   * ("unchanged"), which deliberately never triggers an assessment (see
+   * DetectionProcessingProcessor). Hard-capped at 500 per call regardless
+   * of what's requested, so one click can't accidentally queue thousands
+   * of calls against a free-tier LLM quota.
+   */
+  async backfillIntentAssessments(
+    workspaceId: string,
+    options: {
+      brandId?: string;
+      discoveredFrom?: Date;
+      discoveredTo?: Date;
+      maxFindings?: number;
+    } = {},
+  ): Promise<number> {
+    const limit = Math.min(Math.max(1, options.maxFindings || 50), 500);
+    const findings = await this.findingModel
+      .find(this.buildUnassessedFindingsFilter(workspaceId, options))
+      .select('_id repositoryId')
+      .limit(limit)
+      .lean()
+      .exec();
+    for (const f of findings) {
+      await this.scanQueue.enqueueIntentAssessment({
+        workspaceId,
+        repositoryId: String(f.repositoryId),
+        findingId: String(f._id),
+      });
+    }
+    return findings.length;
   }
 
   /**

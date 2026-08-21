@@ -358,6 +358,62 @@ export class ScansController {
     return { count };
   }
 
+  @Get('unassessed-findings-count')
+  @ApiOperation({
+    summary:
+      'Count of existing findings never AI-assessed and eligible for a backfill - for the "Backfill AI assessments" action. Optionally narrowed to one brand and/or a discovered-date window.',
+  })
+  @ApiQuery({ name: 'brandId', required: false })
+  @ApiQuery({ name: 'discoveredFrom', required: false })
+  @ApiQuery({ name: 'discoveredTo', required: false })
+  async unassessedFindingsCount(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('brandId') brandId?: string,
+    @Query('discoveredFrom') discoveredFrom?: string,
+    @Query('discoveredTo') discoveredTo?: string,
+  ) {
+    const count = await this.scansService.countUnassessedFindings(
+      tenant.workspaceId,
+      {
+        brandId,
+        discoveredFrom: discoveredFrom ? new Date(discoveredFrom) : undefined,
+        discoveredTo: discoveredTo ? new Date(discoveredTo) : undefined,
+      },
+    );
+    return { count };
+  }
+
+  @Post('backfill-intent-assessments')
+  @ApiOperation({
+    summary:
+      'Queues an AI intent assessment for up to maxFindings existing, never-assessed findings - the only way to get an AI score onto findings that predate this feature or were last seen "unchanged" (a plain rescan never triggers one). Optionally narrowed to one brand and/or a discovered-date window; hard-capped at 500 per call.',
+  })
+  async backfillIntentAssessments(
+    @CurrentTenant() tenant: TenantContext,
+    @Body()
+    body: {
+      brandId?: string;
+      discoveredFrom?: string;
+      discoveredTo?: string;
+      maxFindings?: number;
+    },
+  ) {
+    const queued = await this.scansService.backfillIntentAssessments(
+      tenant.workspaceId,
+      {
+        brandId: body.brandId,
+        discoveredFrom: body.discoveredFrom
+          ? new Date(body.discoveredFrom)
+          : undefined,
+        discoveredTo: body.discoveredTo
+          ? new Date(body.discoveredTo)
+          : undefined,
+        maxFindings: body.maxFindings,
+      },
+    );
+    return { queued };
+  }
+
   @Get('keyword-query-preview')
   @ApiOperation({
     summary:

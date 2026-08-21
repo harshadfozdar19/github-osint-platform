@@ -23,7 +23,11 @@ import { KeywordScheduleQueue } from '@/components/KeywordScheduleQueue';
 import { api, Brand, KeywordRotationSlot, Paginated, ScanJob } from '@/lib/api';
 import { formatDateTime } from '@/lib/date';
 
-type ScanModeOption = 'incremental' | 'analyze_pending' | 'reanalyze_existing';
+type ScanModeOption =
+  | 'incremental'
+  | 'analyze_pending'
+  | 'reanalyze_existing'
+  | 'backfill_ai';
 /** External-scan scope: how to find candidate repos. Internal audits skip this entirely - they always target one brand's own accounts. */
 type ExternalScopeOption = 'all' | 'brand' | 'query';
 /** The primary choice this whole page exists to make explicit - see the two buttons below. `null` = not yet chosen. */
@@ -273,6 +277,15 @@ export default function ScansPage() {
   // backlog (pending vs already-analyzed) differs.
   const [analyzedCount, setAnalyzedCount] = useState<number | null>(null);
   const analyzedRequestId = useRef(0);
+  // Count for mode=backfill_ai - existing findings never AI-assessed,
+  // eligible for a manual backfill (see ScansService.countUnassessedFindings).
+  // Shares the same analyzeBrandId/analyzeFrom/analyzeTo scoping as the two
+  // counts above.
+  const [unassessedCount, setUnassessedCount] = useState<number | null>(null);
+  const unassessedRequestId = useRef(0);
+  const [backfillMaxFindings, setBackfillMaxFindings] = useState('');
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillMessage, setBackfillMessage] = useState('');
   // Optional scoping for mode=analyze_pending only - narrows which pending-
   // analysis backlog gets processed (and what the count/button reflect).
   // Separate state from the external-scan `brandId`/`from`/`to` above:
@@ -393,6 +406,31 @@ export default function ScansPage() {
       });
   }
 
+  // Mirrors loadPendingAnalysisCount above - same request-sequencing
+  // guard, same optional brand/discovered-date narrowing, against the
+  // never-AI-assessed findings backlog.
+  function loadUnassessedCount(
+    filters: { brandId?: string; discoveredFrom?: string; discoveredTo?: string } = {},
+  ) {
+    const requestId = ++unassessedRequestId.current;
+    const params = new URLSearchParams();
+    if (filters.brandId) params.set('brandId', filters.brandId);
+    if (filters.discoveredFrom) params.set('discoveredFrom', filters.discoveredFrom);
+    if (filters.discoveredTo) params.set('discoveredTo', filters.discoveredTo);
+    const qs = params.toString();
+    api<{ count: number }>(`/scans/unassessed-findings-count${qs ? `?${qs}` : ''}`)
+      .then((res) => {
+        if (requestId === unassessedRequestId.current) {
+          setUnassessedCount(res.count);
+        }
+      })
+      .catch(() => {
+        if (requestId === unassessedRequestId.current) {
+          setLoadError('Failed to load the unassessed-findings count.');
+        }
+      });
+  }
+
   useEffect(() => {
     load();
     loadActive();
@@ -414,6 +452,7 @@ export default function ScansPage() {
     };
     loadPendingAnalysisCount(filters);
     loadAnalyzedCount(filters);
+    loadUnassessedCount(filters);
   }, [analyzeBrandId, analyzeFrom, analyzeTo]);
 
   // Always polls (not gated on "anything currently known to be running") -
@@ -432,6 +471,7 @@ export default function ScansPage() {
       };
       loadPendingAnalysisCount(filters);
       loadAnalyzedCount(filters);
+      loadUnassessedCount(filters);
     }, 5000);
     return () => clearInterval(id);
   }, [analyzeBrandId, analyzeFrom, analyzeTo]);
@@ -472,6 +512,13 @@ export default function ScansPage() {
     analyzedCount !== null && analyzeMaxReposNum && analyzeMaxReposNum > 0
       ? Math.min(analyzedCount, analyzeMaxReposNum)
       : analyzedCount;
+  // Same capping for "Backfill AI assessments" - its own max field, hard-
+  // ceilinged at 500 server-side regardless of what's requested here.
+  const backfillMaxNum = backfillMaxFindings ? Number(backfillMaxFindings) : undefined;
+  const effectiveUnassessedCount =
+    unassessedCount !== null && backfillMaxNum && backfillMaxNum > 0
+      ? Math.min(unassessedCount, backfillMaxNum)
+      : unassessedCount;
 
   const selectedBrand = brands.find((b) => b._id === brandId);
   const brandNameById = new Map(brands.map((b) => [b._id, b.name]));
@@ -591,6 +638,40 @@ export default function ScansPage() {
     }
   }
 
+  // Not a scan job (no GitHub calls, no repo discovery) - just queues AI
+  // intent-assessment jobs directly for existing findings, so it never
+  // redirects to a scan progress page like startManual does.
+  async function runBackfill() {
+    setBackfilling(true);
+    setBackfillMessage('');
+    setError('');
+    try {
+      const res = await api<{ queued: number }>('/scans/backfill-intent-assessments', {
+        method: 'POST',
+        body: JSON.stringify({
+          brandId: analyzeBrandId || undefined,
+          discoveredFrom: analyzeFrom || undefined,
+          discoveredTo: analyzeTo || undefined,
+          maxFindings: backfillMaxFindings ? Number(backfillMaxFindings) : undefined,
+        }),
+      });
+      setBackfillMessage(
+        res.queued === 0
+          ? 'Nothing to backfill - no unassessed findings match this scope.'
+          : `Queued ${res.queued} finding${res.queued === 1 ? '' : 's'} for AI assessment. They’ll show up on their Finding detail pages as each one completes.`,
+      );
+      loadUnassessedCount({
+        brandId: analyzeBrandId || undefined,
+        discoveredFrom: analyzeFrom || undefined,
+        discoveredTo: analyzeTo || undefined,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Backfill failed');
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   return (
     <RequireAuth>
       <AppShell title="Scans">
@@ -638,6 +719,10 @@ export default function ScansPage() {
                 <option value="reanalyze_existing">
                   Re-analyze existing repos
                   {effectiveReanalyzeCount ? ` (${effectiveReanalyzeCount})` : ''}
+                </option>
+                <option value="backfill_ai">
+                  Backfill AI assessments
+                  {effectiveUnassessedCount ? ` (${effectiveUnassessedCount})` : ''}
                 </option>
               </Select>
             </Field>
@@ -769,6 +854,70 @@ export default function ScansPage() {
                   Browse discovered repositories →
                 </Link>
               </p>
+            </div>
+          ) : mode === 'backfill_ai' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-[var(--muted)]">
+                Queues an AI intent/risk assessment for existing findings that have never been
+                assessed - the only way to get an AI score onto findings that predate this
+                feature, since a plain rescan of an already-analyzed repo just reproduces the
+                same finding and never triggers one. Narrow to one brand, a discovered-date
+                window, and/or a max count below (hard-capped at 500 per run either way) to
+                control how much of your GEMINI_API_KEY / OPENROUTER_API_KEY quota one click
+                uses.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <Field label="Brand">
+                  <Select value={analyzeBrandId} onChange={(e) => setAnalyzeBrandId(e.target.value)}>
+                    <option value="">All brands</option>
+                    {brands.map((b) => (
+                      <option key={b._id} value={b._id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Discovered from">
+                  <Input
+                    type="date"
+                    value={analyzeFrom}
+                    onChange={(e) => setAnalyzeFrom(e.target.value)}
+                  />
+                </Field>
+                <Field label="Discovered to">
+                  <Input
+                    type="date"
+                    value={analyzeTo}
+                    onChange={(e) => setAnalyzeTo(e.target.value)}
+                  />
+                </Field>
+                <Field label="Max findings">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={backfillMaxFindings}
+                    onChange={(e) => setBackfillMaxFindings(e.target.value)}
+                    placeholder="Up to 500"
+                    className="w-28"
+                  />
+                </Field>
+              </div>
+              <Button
+                type="button"
+                onClick={runBackfill}
+                disabled={unassessedCount === 0}
+                loading={backfilling}
+              >
+                {backfilling
+                  ? 'Queueing…'
+                  : unassessedCount === 0
+                    ? 'Nothing to backfill'
+                    : `Backfill ${effectiveUnassessedCount ?? ''} findings`}
+              </Button>
+              {backfillMessage ? (
+                <p className="text-sm text-[var(--accent)]">{backfillMessage}</p>
+              ) : null}
             </div>
           ) : scanKind === null ? (
             <div>
