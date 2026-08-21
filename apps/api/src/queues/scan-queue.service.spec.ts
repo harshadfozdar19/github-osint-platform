@@ -37,6 +37,10 @@ describe('ScanQueueService', () => {
       add: jest.fn(),
       getJobs: jest.fn().mockResolvedValue([]),
     };
+    const intentAssessmentQueue = {
+      add: jest.fn(),
+      getJobs: jest.fn().mockResolvedValue([]),
+    };
 
     const createdId = new Types.ObjectId();
     const scanModel = {
@@ -103,6 +107,7 @@ describe('ScanQueueService', () => {
       detectionQueue as never,
       alertQueue as never,
       branchAnalysisQueue as never,
+      intentAssessmentQueue as never,
       scanModel as never,
       brandModel as never,
       scanState as never,

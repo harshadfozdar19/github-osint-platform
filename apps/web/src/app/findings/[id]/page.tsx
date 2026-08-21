@@ -20,11 +20,14 @@ import {
 } from '@/components/ui';
 import {
   api,
+  ApiError,
   BrandMatchEvidence,
   CredentialVerification,
   Detection,
   Finding,
+  IntentAssessment,
   Repository,
+  RepositoryIntent,
 } from '@/lib/api';
 import { formatDate, formatDateTime } from '@/lib/date';
 import { openExternalLink } from '@/lib/external-link';
@@ -129,6 +132,146 @@ function linkKindLabel(kind: string) {
     default:
       return kind;
   }
+}
+
+function intentLabel(intent: RepositoryIntent): string {
+  switch (intent) {
+    case 'malicious_operation':
+      return 'Malicious operation';
+    case 'impersonation':
+      return 'Impersonation';
+    case 'credential_harvesting':
+      return 'Credential harvesting';
+    case 'phishing_active':
+      return 'Phishing - active';
+    case 'benign':
+      return 'Benign';
+    default:
+      return 'Inconclusive';
+  }
+}
+
+function intentTone(intent: RepositoryIntent): 'danger' | 'warning' | 'success' | 'muted' {
+  switch (intent) {
+    case 'malicious_operation':
+    case 'credential_harvesting':
+    case 'phishing_active':
+      return 'danger';
+    case 'impersonation':
+      return 'warning';
+    case 'benign':
+      return 'success';
+    default:
+      return 'muted';
+  }
+}
+
+/**
+ * AI intent/risk assessment for this finding's repository, if one exists -
+ * see IntelligenceService. A successful assessment already overwrote
+ * finding.riskScore/severity above (Finding.scoringSource === 'ai'), so this
+ * panel is where the reasoning behind that number lives, plus the
+ * agree/disagree feedback that feeds future assessments.
+ */
+function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
+  const [assessment, setAssessment] = useState<IntentAssessment | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [voting, setVoting] = useState(false);
+
+  useEffect(() => {
+    api<IntentAssessment>(`/intelligence/assessments/repository/${repositoryId}`)
+      .then(setAssessment)
+      .catch((err) => {
+        // No assessment yet is expected (not every finding triggers one) -
+        // only a genuine error is worth surfacing, and even then, quietly.
+        if (!(err instanceof ApiError && err.status === 404)) {
+          console.error('Failed to load AI assessment', err);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [repositoryId]);
+
+  async function vote(agreement: 'agree' | 'disagree') {
+    if (!assessment) return;
+    setVoting(true);
+    try {
+      const updated = await api<IntentAssessment>(
+        `/intelligence/assessments/${assessment._id}/agreement`,
+        { method: 'PATCH', body: JSON.stringify({ agreement }) },
+      );
+      setAssessment(updated);
+    } catch {
+      // Non-critical - leave the previous vote state as-is on failure.
+    } finally {
+      setVoting(false);
+    }
+  }
+
+  if (loading || !assessment) return null;
+
+  if (assessment.status === 'failed') {
+    return (
+      <Card className="p-5">
+        <h3 className="text-sm font-medium mb-1">AI assessment</h3>
+        <p className="text-xs text-[var(--muted)]">
+          An AI assessment was attempted for this repository but failed
+          {assessment.error ? `: ${assessment.error}` : '.'} The score above still reflects the
+          rule-based detections.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">AI assessment</h3>
+        <span className="text-xs text-[var(--muted)]">
+          {assessment.provider} · {assessment.model}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Badge tone={intentTone(assessment.intent)}>{intentLabel(assessment.intent)}</Badge>
+        <span className="font-[family-name:var(--font-mono)] text-lg">
+          {assessment.riskScore}
+        </span>
+        <span className="text-xs text-[var(--muted)]">
+          confidence {(assessment.confidence * 100).toFixed(0)}%
+        </span>
+      </div>
+      <p className="mt-3 text-sm">{assessment.reasoning}</p>
+      {assessment.signalsUsed.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {assessment.signalsUsed.map((s) => (
+            <Badge key={s} tone="muted" className="font-[family-name:var(--font-mono)]">
+              {s}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-[var(--muted)]">Do you agree with this assessment?</span>
+        <Button
+          type="button"
+          variant={assessment.analystAgreement === 'agree' ? 'primary' : 'outline'}
+          size="sm"
+          onClick={() => vote('agree')}
+          disabled={voting}
+        >
+          Agree
+        </Button>
+        <Button
+          type="button"
+          variant={assessment.analystAgreement === 'disagree' ? 'danger' : 'outline'}
+          size="sm"
+          onClick={() => vote('disagree')}
+          disabled={voting}
+        >
+          Disagree
+        </Button>
+      </div>
+    </Card>
+  );
 }
 
 function verificationTone(status: CredentialVerification['status']) {
@@ -299,6 +442,11 @@ export default function FindingDetailPage() {
                 <span className="font-[family-name:var(--font-mono)] text-2xl">
                   {finding.riskScore}
                 </span>
+                {finding.scoringSource === 'ai' ? (
+                  <span title="This score was set by the AI assessment below, replacing the original rule-based score.">
+                    <Badge tone="accent">AI-scored</Badge>
+                  </span>
+                ) : null}
                 <Badge tone="muted">{statusLabel(finding.status)}</Badge>
                 {finding.origin ? (
                   <Badge tone={finding.origin === 'internal' ? 'danger' : 'muted'}>
@@ -348,6 +496,8 @@ export default function FindingDetailPage() {
                 </p>
               ) : null}
             </Card>
+
+            {repo?._id ? <AiAssessmentPanel repositoryId={repo._id} /> : null}
 
             <Card className="p-5">
               <h3 className="text-sm font-medium mb-3">SOC triage</h3>
@@ -718,6 +868,13 @@ export default function FindingDetailPage() {
 
             <Card className="p-5">
               <h3 className="text-sm font-medium mb-3">Risk score explanation</h3>
+              {finding.scoringSource === 'ai' ? (
+                <p className="mb-3 text-xs text-[var(--muted)]">
+                  This breakdown shows how the rule-based score was originally computed - the
+                  score shown at the top of this page has since been replaced by the AI
+                  assessment above.
+                </p>
+              ) : null}
               <ul className="space-y-2 text-sm">
                 {(finding.riskBreakdown || []).map((item, idx) => (
                   <li key={`${item.factor}-${idx}`} className="flex gap-3">

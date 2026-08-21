@@ -61,6 +61,7 @@ import {
 import { GitHubModule } from '../github/github.module';
 import { DetectionModule } from '../detection/detection.module';
 import { AlertsModule } from '../alerts/alerts.module';
+import { IntelligenceModule } from '../intelligence/intelligence.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { ScanProgressService } from '../scans/progress/scan-progress.service';
 import { IncrementalScanService } from '../scans/incremental-scan.service';
@@ -75,6 +76,7 @@ import { DetectionProcessingProcessor } from './processors/detection-processing.
 import { AlertDispatchProcessor } from './processors/alert-dispatch.processor';
 import { KeywordRotationProcessor } from './processors/keyword-rotation.processor';
 import { BranchAnalysisProcessor } from './processors/branch-analysis.processor';
+import { IntentAssessmentProcessor } from './processors/intent-assessment.processor';
 
 const queueRegistrations = [
   ...ALL_SCAN_QUEUES.map((name) => ({ name })),
@@ -126,6 +128,7 @@ const sharedImports = [
   GitHubModule,
   DetectionModule,
   AlertsModule,
+  IntelligenceModule,
   forwardRef(() => WorkspacesModule),
 ];
 
@@ -149,6 +152,7 @@ const workerProviders = [
   AlertDispatchProcessor,
   KeywordRotationProcessor,
   BranchAnalysisProcessor,
+  IntentAssessmentProcessor,
 ];
 
 @Module({})

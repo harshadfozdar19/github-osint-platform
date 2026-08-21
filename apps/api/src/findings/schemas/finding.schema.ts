@@ -90,6 +90,20 @@ export class Finding {
   @Prop({ required: true, min: 0, max: 100, index: true })
   riskScore!: number;
 
+  /**
+   * Which system's number severity/riskScore currently hold - 'rules' (the
+   * deterministic RiskScoringService breakdown, still shown in
+   * riskBreakdown below) until a successful AI intent assessment exists,
+   * then 'ai' permanently. Deliberately a single overwritten pair of
+   * fields rather than two parallel scores shown side by side - the two
+   * systems must never both claim to be "the" risk score for the same
+   * finding at once, so once the AI succeeds its number replaces the
+   * rules' number everywhere (list, dashboard, sorting, filtering), not
+   * just in some separate panel.
+   */
+  @Prop({ type: String, enum: ['rules', 'ai'], default: 'rules', index: true })
+  scoringSource!: 'rules' | 'ai';
+
   @Prop({ type: [String], enum: ThreatCategory, default: [], index: true })
   categories!: ThreatCategory[];
 

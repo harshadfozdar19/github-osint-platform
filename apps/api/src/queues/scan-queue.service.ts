@@ -30,18 +30,21 @@ import {
   QUEUE_BRANCH_ANALYSIS,
   QUEUE_DETECTION_PROCESSING,
   QUEUE_GITHUB_SEARCH,
+  QUEUE_INTENT_ASSESSMENT,
   QUEUE_REPOSITORY_ANALYSIS,
   QUEUE_SCAN_ORCHESTRATOR,
   AlertDispatchJobData,
   BranchAnalysisJobData,
   DetectionProcessingJobData,
   GitHubSearchJobData,
+  IntentAssessmentJobData,
   RepositoryAnalysisJobData,
   ScanOrchestratorJobData,
   alertJobId,
   branchAnalysisJobId,
   detectionJobId,
   githubSearchJobId,
+  intentAssessmentJobId,
   orchestratorJobId,
   repoAnalysisJobId,
 } from './queue.constants';
@@ -148,6 +151,8 @@ export class ScanQueueService {
     private readonly alertQueue: Queue<AlertDispatchJobData>,
     @InjectQueue(QUEUE_BRANCH_ANALYSIS)
     private readonly branchAnalysisQueue: Queue<BranchAnalysisJobData>,
+    @InjectQueue(QUEUE_INTENT_ASSESSMENT)
+    private readonly intentAssessmentQueue: Queue<IntentAssessmentJobData>,
     @InjectModel(ScanJob.name)
     private readonly scanModel: Model<ScanJobDocument>,
     @InjectModel(MonitoredBrand.name)
@@ -493,6 +498,13 @@ export class ScanQueueService {
     return this.alertQueue.add('alert', data, {
       ...defaultJobOptions(priority),
       jobId: alertJobId(data.scanJobId, data.findingId),
+    });
+  }
+
+  async enqueueIntentAssessment(data: IntentAssessmentJobData, priority = 6) {
+    return this.intentAssessmentQueue.add('assess', data, {
+      ...defaultJobOptions(priority),
+      jobId: intentAssessmentJobId(data.findingId),
     });
   }
 

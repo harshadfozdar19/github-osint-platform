@@ -190,6 +190,8 @@ export interface Finding {
   summary: string;
   severity: Severity;
   riskScore: number;
+  /** Which system riskScore/severity currently reflect - 'ai' once a successful intent assessment has overwritten the original rule-based score, undefined/'rules' otherwise. */
+  scoringSource?: 'rules' | 'ai';
   categories: string[];
   /** Derived at read-time from `categories` - not stored. */
   threatClass?: ThreatClass[];
@@ -271,6 +273,33 @@ export interface TrackedGithubUser {
   username: string;
   note?: string;
   commitSearchUrl: string;
+  createdAt?: string;
+}
+
+export type RepositoryIntent =
+  | 'malicious_operation'
+  | 'impersonation'
+  | 'credential_harvesting'
+  | 'phishing_active'
+  | 'benign'
+  | 'inconclusive';
+
+/** An AI-generated intent/risk assessment for a repository - see the Findings detail page. */
+export interface IntentAssessment {
+  _id: string;
+  repositoryId: string;
+  findingId?: string;
+  intent: RepositoryIntent;
+  riskScore: number;
+  confidence: number;
+  reasoning: string;
+  signalsUsed: string[];
+  provider: string;
+  model: string;
+  promptVersion: string;
+  status: 'completed' | 'failed';
+  error?: string;
+  analystAgreement?: 'agree' | 'disagree';
   createdAt?: string;
 }
 

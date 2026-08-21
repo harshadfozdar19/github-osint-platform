@@ -19,6 +19,7 @@ import { HealthController } from './health/health.controller';
 import { KeywordsModule } from './keywords/keywords.module';
 import { FingerprintsModule } from './fingerprints/fingerprints.module';
 import { TrackedUsersModule } from './tracked-users/tracked-users.module';
+import { IntelligenceModule } from './intelligence/intelligence.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -55,6 +56,7 @@ import { AppController } from './app.controller';
     KeywordsModule,
     FingerprintsModule,
     TrackedUsersModule,
+    IntelligenceModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

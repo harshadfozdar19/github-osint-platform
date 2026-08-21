@@ -180,6 +180,23 @@ export class DetectionProcessingProcessor extends WorkerHost {
             findingId: result.findingId,
           });
         }
+
+        // AI intent/risk assessment - only for a genuinely new or reopened
+        // finding (never on an unchanged incremental-rescan hit, which
+        // would just re-pay for the same LLM call), and never on an
+        // internal audit (same exclusion as checkLiveness - "is this
+        // externally live" answers nothing useful for a brand's own repo).
+        if (
+          result.findingId &&
+          !data.internalAudit &&
+          (result.findingsNew > 0 || result.findingsReopened > 0)
+        ) {
+          await this.scanQueue.enqueueIntentAssessment({
+            workspaceId: data.workspaceId,
+            repositoryId: data.repositoryDbId,
+            findingId: result.findingId,
+          });
+        }
       };
 
       await withJobTimeout(

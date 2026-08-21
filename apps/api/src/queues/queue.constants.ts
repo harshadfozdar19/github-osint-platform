@@ -4,6 +4,7 @@ export const QUEUE_REPOSITORY_ANALYSIS = 'repository-analysis';
 export const QUEUE_DETECTION_PROCESSING = 'detection-processing';
 export const QUEUE_ALERT_DISPATCH = 'alert-dispatch';
 export const QUEUE_BRANCH_ANALYSIS = 'branch-analysis';
+export const QUEUE_INTENT_ASSESSMENT = 'intent-assessment';
 
 export const ALL_SCAN_QUEUES = [
   QUEUE_SCAN_ORCHESTRATOR,
@@ -12,6 +13,7 @@ export const ALL_SCAN_QUEUES = [
   QUEUE_DETECTION_PROCESSING,
   QUEUE_ALERT_DISPATCH,
   QUEUE_BRANCH_ANALYSIS,
+  QUEUE_INTENT_ASSESSMENT,
 ] as const;
 
 export type ScanQueueName = (typeof ALL_SCAN_QUEUES)[number];
@@ -201,6 +203,19 @@ export interface AlertDispatchJobData {
 }
 
 /**
+ * Triggers one repository's LLM intent/risk assessment - enqueued from
+ * DetectionProcessingProcessor only for a genuinely new or reopened finding
+ * on an external (non-internal-audit) scan, mirroring
+ * ScanPipelineService.checkLiveness's own "only worth the extra cost once
+ * something else has flagged this repo" gating.
+ */
+export interface IntentAssessmentJobData {
+  workspaceId: string;
+  repositoryId: string;
+  findingId: string;
+}
+
+/**
  * On-demand: clone and content-scan exactly ONE already-known repository's
  * ONE specific branch - see ScanMode.BRANCH_ANALYSIS. Deliberately far
  * simpler than RepositoryAnalysisJobData: no incremental-rescan decision (no
@@ -262,6 +277,10 @@ export function detectionJobId(scanJobId: string, githubId: number): string {
 
 export function alertJobId(scanJobId: string, findingId: string): string {
   return `scan-${scanJobId}-alert-${findingId}`;
+}
+
+export function intentAssessmentJobId(findingId: string): string {
+  return `intent-assessment-${findingId}`;
 }
 
 export function branchAnalysisJobId(scanJobId: string): string {

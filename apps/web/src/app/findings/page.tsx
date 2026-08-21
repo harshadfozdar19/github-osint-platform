@@ -626,7 +626,17 @@ function FindingsPageInner() {
                         {statusLabel(f.status)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-[family-name:var(--font-mono)]">
-                        {f.riskScore}
+                        <span className="inline-flex items-center gap-1">
+                          {f.riskScore}
+                          {f.scoringSource === 'ai' ? (
+                            <span
+                              className="text-[10px] font-sans font-medium text-[var(--accent)]"
+                              title="Scored by AI assessment, not the rule engine"
+                            >
+                              AI
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-[family-name:var(--font-mono)]">
                         {f.keywordMatchCount ?? 0}
