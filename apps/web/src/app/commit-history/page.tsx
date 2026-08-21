@@ -86,14 +86,6 @@ export default function CommitHistoryPage() {
         subtitle="Track GitHub usernames and jump straight to everything public they've committed."
       >
         <Card className="mb-6 p-4">
-          <p className="mb-3 text-sm text-[var(--muted)]">
-            Add a GitHub username to keep an eye on. Nothing is fetched or stored here beyond the
-            username itself - each entry just links straight to{' '}
-            <span className="font-[family-name:var(--font-mono)] text-xs">
-              github.com/search?q=author:&lt;username&gt;
-            </span>
-            , GitHub&apos;s own commit search for that person, sorted newest first.
-          </p>
           <form onSubmit={onAdd} className="flex flex-wrap items-end gap-3">
             <Field label="GitHub username" className="min-w-[200px]">
               <Input

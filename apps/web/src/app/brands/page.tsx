@@ -1,7 +1,6 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RequireAuth } from '@/components/RequireAuth';
 import {
@@ -14,7 +13,9 @@ import {
   ErrorState,
   Field,
   Input,
+  Modal,
 } from '@/components/ui';
+import { TagInput } from '@/components/TagInput';
 import { api, Brand } from '@/lib/api';
 
 /** Per-keyword lifetime discovery total (GET /scans/active-by-keyword) - reposDiscovered there is summed across EVERY scan ever run for that keyword, not just active ones, so it's already a running lifetime count. */
@@ -39,79 +40,62 @@ const emptyForm: BrandForm = {
   enabled: true,
 };
 
-/**
- * Add-one-at-a-time chip input, replacing a single "type it comma-separated"
- * text field: type a value, click Add (or press Enter), it becomes a
- * removable chip. Avoids the ambiguity of a raw comma-separated string
- * (what if a value itself needs a comma, was that trailing space intentional,
- * etc.) and makes the current list directly visible/editable instead of
- * buried in one long line of text.
- */
-function TagInput({
-  values,
-  onChange,
-  placeholder,
+/** Shared field set for both the "Add company" card and the edit modal - so the two forms can't silently drift apart. */
+function BrandFormFields({
+  form,
+  setForm,
 }: {
-  values: string[];
-  onChange: (next: string[]) => void;
-  placeholder?: string;
+  form: BrandForm;
+  setForm: (next: BrandForm) => void;
 }) {
-  const [draft, setDraft] = useState('');
-
-  function commit() {
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    if (values.some((v) => v.toLowerCase() === trimmed.toLowerCase())) {
-      setDraft('');
-      return;
-    }
-    onChange([...values, trimmed]);
-    setDraft('');
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commit();
-    }
-  }
-
-  function remove(index: number) {
-    onChange(values.filter((_, i) => i !== index));
-  }
-
   return (
-    <div className="min-w-0">
-      <div className="flex gap-2">
+    <>
+      <Field label="Company name" className="sm:col-span-2">
         <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          className="min-w-0 flex-1"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="PhonePe"
         />
-        <Button type="button" variant="outline" onClick={commit} disabled={!draft.trim()}>
-          Add
-        </Button>
-      </div>
-      {values.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {values.map((v, i) => (
-            <Badge key={`${v}-${i}`} tone="muted" wrap className="max-w-full normal-case">
-              <span className="break-words">{v}</span>
-              <button
-                type="button"
-                onClick={() => remove(i)}
-                className="shrink-0 text-[var(--muted)] hover:text-[var(--danger)]"
-                aria-label={`Remove "${v}"`}
-              >
-                <X className="h-3 w-3" aria-hidden />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
+      </Field>
+      <Field label="Description" className="sm:col-span-2">
+        <Input
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+        />
+      </Field>
+      <Field label="Aliases">
+        <TagInput
+          values={form.aliases}
+          onChange={(next) => setForm({ ...form, aliases: next })}
+          placeholder="phone pe"
+        />
+      </Field>
+      <Field label="Search keywords">
+        <TagInput
+          values={form.keywords}
+          onChange={(next) => setForm({ ...form, keywords: next })}
+          placeholder="phonepe"
+        />
+      </Field>
+      <Field
+        label="Trusted GitHub owners"
+        className="sm:col-span-2"
+        hint="This company's own real GitHub org/user accounts, if known. Every public repo they own gets scanned unconditionally - this is what catches your own team accidentally leaving a real secret in a public repo, not just impersonators."
+      >
+        <TagInput
+          values={form.trustedGithubOwners}
+          onChange={(next) => setForm({ ...form, trustedGithubOwners: next })}
+          placeholder="angel-one-tech"
+        />
+      </Field>
+      <label className="flex items-center gap-2 text-sm sm:col-span-2">
+        <Checkbox
+          checked={form.enabled}
+          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+        />
+        Enabled for scans
+      </label>
+    </>
   );
 }
 
@@ -120,8 +104,14 @@ export default function BrandsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [form, setForm] = useState<BrandForm>(emptyForm);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The company currently open in the edit modal, and its own draft form -
+  // fully separate from `form` above (the "Add company" card's own draft),
+  // so editing one company can never bleed into the add-a-new-company form.
+  const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
+  const [editForm, setEditForm] = useState<BrandForm>(emptyForm);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
   // brandId -> keyword -> lifetime repos discovered (every scan ever run for
   // that keyword, not just the currently active one) - see loadKeywordTotals.
   const [keywordTotals, setKeywordTotals] = useState<
@@ -176,28 +166,19 @@ export default function BrandsPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     setError('');
-    const payload = {
-      name: form.name.trim(),
-      description: form.description.trim(),
-      aliases: form.aliases,
-      keywords: form.keywords,
-      trustedGithubOwners: form.trustedGithubOwners,
-      enabled: form.enabled,
-    };
     try {
-      if (editingId) {
-        await api(`/brands/${editingId}`, {
-          method: 'PATCH',
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await api('/brands', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      }
+      await api('/brands', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name.trim(),
+          description: form.description.trim(),
+          aliases: form.aliases,
+          keywords: form.keywords,
+          trustedGithubOwners: form.trustedGithubOwners,
+          enabled: form.enabled,
+        }),
+      });
       setForm(emptyForm);
-      setEditingId(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -207,8 +188,9 @@ export default function BrandsPage() {
   }
 
   function startEdit(brand: Brand) {
-    setEditingId(brand._id);
-    setForm({
+    setEditError('');
+    setEditingBrand(brand);
+    setEditForm({
       name: brand.name,
       description: brand.description || '',
       aliases: brand.aliases,
@@ -216,6 +198,32 @@ export default function BrandsPage() {
       trustedGithubOwners: brand.trustedGithubOwners || [],
       enabled: brand.enabled,
     });
+  }
+
+  async function onEditSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingBrand || !editForm.name.trim()) return;
+    setEditSaving(true);
+    setEditError('');
+    try {
+      await api(`/brands/${editingBrand._id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          description: editForm.description.trim(),
+          aliases: editForm.aliases,
+          keywords: editForm.keywords,
+          trustedGithubOwners: editForm.trustedGithubOwners,
+          enabled: editForm.enabled,
+        }),
+      });
+      setEditingBrand(null);
+      await load();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   async function toggle(brand: Brand) {
@@ -234,10 +242,7 @@ export default function BrandsPage() {
     if (!confirm('Delete this monitored company?')) return;
     try {
       await api(`/brands/${id}`, { method: 'DELETE' });
-      if (editingId === id) {
-        setEditingId(null);
-        setForm(emptyForm);
-      }
+      if (editingBrand?._id === id) setEditingBrand(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
@@ -251,68 +256,13 @@ export default function BrandsPage() {
         subtitle="Create, edit, and enable brands used in GitHub OSINT scan queries."
       >
         <Card className="mb-6 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-[var(--muted)]">Add company</h3>
           <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
-            <Field label="Company name" className="sm:col-span-2">
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="PhonePe"
-              />
-            </Field>
-            <Field label="Description" className="sm:col-span-2">
-              <Input
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-              />
-            </Field>
-            <Field label="Aliases">
-              <TagInput
-                values={form.aliases}
-                onChange={(next) => setForm({ ...form, aliases: next })}
-                placeholder="phone pe"
-              />
-            </Field>
-            <Field label="Search keywords">
-              <TagInput
-                values={form.keywords}
-                onChange={(next) => setForm({ ...form, keywords: next })}
-                placeholder="phonepe"
-              />
-            </Field>
-            <Field
-              label="Trusted GitHub owners"
-              className="sm:col-span-2"
-              hint="This company's own real GitHub org/user accounts, if known. Every public repo they own gets scanned unconditionally - this is what catches your own team accidentally leaving a real secret in a public repo, not just impersonators."
-            >
-              <TagInput
-                values={form.trustedGithubOwners}
-                onChange={(next) => setForm({ ...form, trustedGithubOwners: next })}
-                placeholder="angel-one-tech"
-              />
-            </Field>
-            <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <Checkbox
-                checked={form.enabled}
-                onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-              />
-              Enabled for scans
-            </label>
-            <div className="flex gap-2 sm:col-span-2">
+            <BrandFormFields form={form} setForm={setForm} />
+            <div className="sm:col-span-2">
               <Button type="submit" loading={saving}>
-                {saving ? 'Saving…' : editingId ? 'Update company' : 'Add company'}
+                {saving ? 'Saving…' : 'Add company'}
               </Button>
-              {editingId ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setEditingId(null);
-                    setForm(emptyForm);
-                  }}
-                >
-                  Cancel
-                </Button>
-              ) : null}
             </div>
           </form>
         </Card>
@@ -404,6 +354,23 @@ export default function BrandsPage() {
             </Card>
           ))}
         </ul>
+
+        {editingBrand ? (
+          <Modal title={`Edit — ${editingBrand.name}`} onClose={() => setEditingBrand(null)}>
+            <form onSubmit={onEditSubmit} className="grid gap-4">
+              <BrandFormFields form={editForm} setForm={setEditForm} />
+              {editError ? <ErrorState message={editError} /> : null}
+              <div className="flex gap-2">
+                <Button type="submit" loading={editSaving}>
+                  {editSaving ? 'Saving…' : 'Save changes'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setEditingBrand(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Modal>
+        ) : null}
       </AppShell>
     </RequireAuth>
   );

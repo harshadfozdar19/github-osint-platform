@@ -631,7 +631,7 @@ export default function ScansPage() {
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Scan mode">
               <Select value={mode} onChange={(e) => setMode(e.target.value as ScanModeOption)}>
-                <option value="incremental">Incremental (skip unchanged)</option>
+                <option value="incremental">Discover repositories</option>
                 <option value="analyze_pending">
                   Analyze discovered repos{effectiveAnalyzeCount ? ` (${effectiveAnalyzeCount})` : ''}
                 </option>
