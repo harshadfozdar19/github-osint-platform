@@ -10,7 +10,6 @@ import {
   Badge,
   Button,
   Card,
-  Checkbox,
   EmptyState,
   ErrorState,
   Field,
@@ -24,12 +23,7 @@ import { KeywordScheduleQueue } from '@/components/KeywordScheduleQueue';
 import { api, Brand, KeywordRotationSlot, Paginated, ScanJob } from '@/lib/api';
 import { formatDateTime } from '@/lib/date';
 
-type ScanModeOption =
-  | 'incremental'
-  | 'full'
-  | 'failed_only'
-  | 'analyze_pending'
-  | 'reanalyze_existing';
+type ScanModeOption = 'incremental' | 'analyze_pending' | 'reanalyze_existing';
 /** External-scan scope: how to find candidate repos. Internal audits skip this entirely - they always target one brand's own accounts. */
 type ExternalScopeOption = 'all' | 'brand' | 'query';
 /** The primary choice this whole page exists to make explicit - see the two buttons below. `null` = not yet chosen. */
@@ -122,7 +116,7 @@ function ScanTable({
               </td>
               <td className="break-words px-2 py-2.5 sm:px-3">
                 {s.scopeBrandId ? (
-                  <div>
+                  <div className="min-w-0">
                     <span className="font-medium">
                       {brandNameById.get(s.scopeBrandId) ?? 'Unknown company'}
                     </span>
@@ -136,16 +130,17 @@ function ScanTable({
                               text: s.scopeKeyword!,
                             })
                           }
-                          className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)] hover:underline"
+                          className="ml-1.5 inline-block max-w-[110px] truncate align-bottom rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)] hover:underline"
                           style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
                           title="Click to view the full keyword"
                         >
-                          {s.scopeKeyword.slice(0, KEYWORD_PREVIEW_LEN)}…
+                          {s.scopeKeyword}
                         </button>
                       ) : (
                         <span
-                          className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)]"
+                          className="ml-1.5 inline-block max-w-[110px] truncate align-bottom rounded px-1.5 py-0.5 text-xs font-[family-name:var(--font-mono)]"
                           style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
+                          title={s.scopeKeyword}
                         >
                           {s.scopeKeyword}
                         </span>
@@ -257,7 +252,6 @@ export default function ScansPage() {
   const [message, setMessage] = useState('');
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<ScanModeOption>('incremental');
-  const [forceFullScan, setForceFullScan] = useState(false);
   const [scanKind, setScanKind] = useState<ScanKind>(null);
   const [scope, setScope] = useState<ExternalScopeOption>('all');
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -507,11 +501,7 @@ export default function ScansPage() {
   }
 
   async function startManual() {
-    if (
-      mode !== 'failed_only' &&
-      mode !== 'analyze_pending' &&
-      mode !== 'reanalyze_existing'
-    ) {
+    if (mode !== 'analyze_pending' && mode !== 'reanalyze_existing') {
       if (isInternalAudit && !brandId) {
         setError('Pick a brand to run the internal audit against.');
         return;
@@ -537,19 +527,14 @@ export default function ScansPage() {
     try {
       const effectiveScope: ExternalScopeOption = isInternalAudit ? 'brand' : scope;
       const dateFilterApplies = dateRangeApplies;
-      // failed_only, analyze_pending, and reanalyze_existing are all
-      // workspace-wide replay modes with no scoping/filtering options of
-      // their own - everything below only applies to a genuinely new
-      // discovery/analysis run.
-      const isScopedMode =
-        mode !== 'failed_only' &&
-        mode !== 'analyze_pending' &&
-        mode !== 'reanalyze_existing';
+      // analyze_pending and reanalyze_existing are both workspace-wide
+      // replay modes with no scoping/filtering options of their own -
+      // everything below only applies to a genuinely new discovery run.
+      const isScopedMode = mode !== 'analyze_pending' && mode !== 'reanalyze_existing';
       const job = await api<ScanJob>('/scans/manual', {
         method: 'POST',
         body: JSON.stringify({
           mode,
-          forceFullScan: mode === 'full' ? true : forceFullScan,
           ...(isScopedMode && effectiveScope === 'brand'
             ? { brandId, internalAudit: isInternalAudit }
             : {}),
@@ -641,14 +626,12 @@ export default function ScansPage() {
           )}
         </div>
 
-        <Card id="start-manual-scan" className="mb-6 space-y-4 p-4 scroll-mt-4">
+        <Card id="start-manual-scan" className="mb-6 space-y-3 p-3 scroll-mt-4">
           <h3 className="text-sm font-semibold text-[var(--muted)]">Start a manual scan</h3>
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Scan mode">
               <Select value={mode} onChange={(e) => setMode(e.target.value as ScanModeOption)}>
                 <option value="incremental">Incremental (skip unchanged)</option>
-                <option value="full">Full rescan</option>
-                <option value="failed_only">Failed items only</option>
                 <option value="analyze_pending">
                   Analyze discovered repos{effectiveAnalyzeCount ? ` (${effectiveAnalyzeCount})` : ''}
                 </option>
@@ -658,22 +641,9 @@ export default function ScansPage() {
                 </option>
               </Select>
             </Field>
-            {mode === 'incremental' ? (
-              <label className="flex items-center gap-2 pb-2.5 text-sm">
-                <Checkbox
-                  checked={forceFullScan}
-                  onChange={(e) => setForceFullScan(e.target.checked)}
-                />
-                Force full content scan
-              </label>
-            ) : null}
           </div>
 
-          {mode === 'failed_only' ? (
-            <Button type="button" onClick={startManual} loading={running}>
-              {running ? 'Enqueueing…' : 'Retry failed items'}
-            </Button>
-          ) : mode === 'analyze_pending' ? (
+          {mode === 'analyze_pending' ? (
             <div className="space-y-3">
               <p className="text-sm text-[var(--muted)]">
                 Runs real content analysis (clone/fetch, detection rules, findings) on repos a
@@ -840,7 +810,7 @@ export default function ScansPage() {
             </div>
           ) : (
             <div
-              className="space-y-3 rounded-lg border p-4"
+              className="space-y-2.5 rounded-lg border p-3"
               style={{
                 borderColor: isInternalAudit ? 'var(--danger)' : 'var(--accent-border)',
                 background: isInternalAudit ? 'var(--danger-soft)' : 'var(--accent-soft)',
@@ -857,9 +827,9 @@ export default function ScansPage() {
                 <button
                   type="button"
                   onClick={resetScanKind}
-                  className="text-xs text-[var(--muted)] hover:underline"
+                  className="rounded px-2 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-border)]/20 hover:underline"
                 >
-                  ← choose a different scan type
+                  ← Back
                 </button>
               </div>
 

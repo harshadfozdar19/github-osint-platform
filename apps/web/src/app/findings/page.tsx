@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -14,6 +15,7 @@ import {
   ErrorState,
   Field,
   Input,
+  LoadingBlock,
   Modal,
   Pagination,
   Select,
@@ -237,12 +239,23 @@ function dateRangeBounds(preset: string): { from?: string; to?: string } {
 }
 
 export default function FindingsPage() {
+  return (
+    <Suspense fallback={<LoadingBlock />}>
+      <FindingsPageInner />
+    </Suspense>
+  );
+}
+
+function FindingsPageInner() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<Paginated<Finding> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [severity, setSeverity] = useState('');
-  const [category, setCategory] = useState('');
+  // Deep-link from the Overview page's "Findings by category" chips -
+  // /findings?category=<value> lands here already filtered.
+  const [category, setCategory] = useState(searchParams.get('category') || '');
   const [threatClass, setThreatClass] = useState('');
   const [origin, setOrigin] = useState('');
   const [status, setStatus] = useState('');
@@ -391,6 +404,11 @@ export default function FindingsPage() {
                 <option value="fake_apk">Fake APK</option>
                 <option value="malware">Malware</option>
                 <option value="suspicious_repo">Suspicious repo</option>
+                <option value="credential_reuse">Credential reuse</option>
+                <option value="content_reuse">Content reuse</option>
+                <option value="custom_keyword_match">Custom keyword match</option>
+                <option value="suspicious_destination">Suspicious destination</option>
+                <option value="confirmed_live">Confirmed live</option>
               </Select>
             </Field>
             <Field label="Threat class">

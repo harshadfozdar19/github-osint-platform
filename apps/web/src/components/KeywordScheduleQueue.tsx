@@ -559,6 +559,12 @@ export function KeywordScheduleQueue({
 
   const isRunning = !!status?.enabled;
   const hasConfiguredSlots = !!status && status.slots.length > 0;
+  // The backend sets lastError to this exact, expected state (not a real
+  // failure) whenever every configured keyword happens to be paused - the
+  // "Scheduler is off" placeholder below already communicates that, so
+  // showing it a second time as a red error reads as something being wrong
+  // when it isn't.
+  const allSlotsPaused = hasConfiguredSlots && status!.slots.every((s) => s.paused);
   const remainingMs =
     isRunning && status?.slotEndsAt
       ? Math.max(0, new Date(status.slotEndsAt).getTime() - now)
@@ -617,7 +623,7 @@ export function KeywordScheduleQueue({
       </div>
 
       <div className="p-4">
-        {status?.lastError ? (
+        {status?.lastError && !allSlotsPaused ? (
           <p className="mb-3 text-xs text-[var(--danger)]">{status.lastError}</p>
         ) : null}
 
@@ -660,6 +666,13 @@ export function KeywordScheduleQueue({
                   </p>
                   <p className="mt-1 text-lg font-semibold">{status.cyclesCompleted}</p>
                 </Card>
+              </div>
+            ) : allSlotsPaused ? (
+              <div className="mb-3 rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-center">
+                <p className="text-sm font-medium text-[var(--muted)]">Not started</p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Select a keyword to start the scheduler - resume one below, or add a new one.
+                </p>
               </div>
             ) : (
               <p className="mb-2 text-xs text-[var(--muted)]">

@@ -25,7 +25,6 @@ import {
   StatCard,
 } from '@/components/ui';
 import { api, DashboardSummary, Finding } from '@/lib/api';
-import { formatTime } from '@/lib/date';
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
@@ -77,85 +76,6 @@ export default function DashboardPage() {
               />
               <StatCard label="Repos scanned" value={data.reposScanned} />
             </div>
-
-            {data.githubRateLimit ? (
-              <Card className="space-y-3 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-medium">GitHub API quota</h2>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      Shared across workers · workspace budgets prevent noisy-neighbor scans
-                    </p>
-                  </div>
-                  <p className="text-xs text-[var(--muted)]">
-                    {data.githubRateLimit.configured ? 'Token configured' : 'No GITHUB_TOKEN'}
-                  </p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-                  {(['core', 'search'] as const).map((key) => {
-                    const snap = data.githubRateLimit?.primary?.[key];
-                    return (
-                      <div
-                        key={key}
-                        className="rounded border border-[var(--border)] px-3 py-2"
-                      >
-                        <p className="text-xs uppercase text-[var(--muted)]">{key}</p>
-                        <p className="font-medium mt-1">
-                          {snap
-                            ? `${snap.remaining} / ${snap.limit}`
-                            : '—'}
-                        </p>
-                        <p className="text-xs text-[var(--muted)] mt-1">
-                          {snap
-                            ? `Resets ${formatTime(snap.resetAt)}`
-                            : 'No samples yet'}
-                        </p>
-                      </div>
-                    );
-                  })}
-                  <div className="rounded border border-[var(--border)] px-3 py-2">
-                    <p className="text-xs uppercase text-[var(--muted)]">Workspace budget</p>
-                    <p className="font-medium mt-1">
-                      {data.githubRateLimit.workspace
-                        ? `${data.githubRateLimit.workspace.remaining} left`
-                        : '—'}
-                    </p>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      {data.githubRateLimit.workspace
-                        ? `${data.githubRateLimit.workspace.used}/${data.githubRateLimit.workspace.limit} today · in-flight ${data.githubRateLimit.workspace.inFlight}/${data.githubRateLimit.workspace.maxConcurrency}`
-                        : 'No budget data'}
-                    </p>
-                  </div>
-                  <div className="rounded border border-[var(--border)] px-3 py-2">
-                    <p className="text-xs uppercase text-[var(--muted)]">Paused scans</p>
-                    <p className="font-medium mt-1">
-                      {data.githubRateLimit.pausedScanCount}
-                    </p>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      {data.githubRateLimit.pause.paused
-                        ? `Paused until ${formatTime(data.githubRateLimit.pause.pausedUntil)}`
-                        : data.githubRateLimit.secondaryRetryAfterUntil
-                          ? `Secondary limit until ${formatTime(data.githubRateLimit.secondaryRetryAfterUntil)}`
-                          : 'No active pause'}
-                    </p>
-                  </div>
-                </div>
-                {data.githubRateLimit.warnings.length > 0 ? (
-                  <ul className="space-y-1">
-                    {data.githubRateLimit.warnings.map((w) => (
-                      <li
-                        key={w}
-                        className="rounded border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-3 py-2 text-xs text-[var(--warning)]"
-                      >
-                        {w}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-xs text-[var(--muted)]">No quota warnings.</p>
-                )}
-              </Card>
-            ) : null}
 
             <div className="grid gap-6 lg:grid-cols-2">
               <Card className="p-4">
@@ -273,12 +193,13 @@ export default function DashboardPage() {
                   <p className="text-sm text-[var(--muted)]">No categories yet.</p>
                 ) : (
                   data.findingsByCategory.map((c) => (
-                    <span
+                    <Link
                       key={c.category}
-                      className="rounded-lg border border-[var(--border)] px-3 py-1 text-sm"
+                      href={`/findings?category=${encodeURIComponent(c.category)}`}
+                      className="rounded-lg border border-[var(--border)] px-3 py-1 text-sm transition-colors duration-150 hover:border-[var(--accent-border)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-active)]"
                     >
                       {c.category.replace(/_/g, ' ')} · {c.count}
-                    </span>
+                    </Link>
                   ))
                 )}
               </div>

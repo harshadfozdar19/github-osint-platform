@@ -65,7 +65,7 @@ function hmsToMs(hms: Hms): number {
   return ((hms.h * 3600 + hms.m * 60 + hms.s) * 1000);
 }
 
-/** hh:mm:ss duration picker for the sequential scheduler queue - see KeywordScheduleQueue. */
+/** hh:mm duration picker for the sequential scheduler queue - see KeywordScheduleQueue. Seconds aren't exposed in the UI (nobody schedules to the second) but stay zeroed in the underlying value. */
 function HmsPicker({
   value,
   onChange,
@@ -75,7 +75,7 @@ function HmsPicker({
   onChange: (next: Hms) => void;
   disabled?: boolean;
 }) {
-  const field = (key: keyof Hms, max: number) => (
+  const field = (key: 'h' | 'm', max: number) => (
     <input
       type="number"
       min={0}
@@ -85,17 +85,15 @@ function HmsPicker({
       onChange={(e) =>
         onChange({ ...value, [key]: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })
       }
-      className="w-14 rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-1.5 text-center text-xs disabled:opacity-60"
+      className="w-14 shrink-0 rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-1.5 text-center text-xs disabled:opacity-60"
     />
   );
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex shrink-0 items-center gap-0.5 whitespace-nowrap">
       {field('h', 23)}
       <span className="text-xs text-[var(--muted)]">h</span>
       {field('m', 59)}
       <span className="text-xs text-[var(--muted)]">m</span>
-      {field('s', 59)}
-      <span className="text-xs text-[var(--muted)]">s</span>
     </div>
   );
 }
@@ -122,9 +120,9 @@ function StatusBadge({
 
 function StatTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <Card className="px-4 py-3">
+    <Card className="px-3 py-2">
       <p className="text-[11px] uppercase tracking-wider text-[var(--muted)]">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="text-lg font-semibold tracking-tight">{value}</p>
     </Card>
   );
 }
@@ -395,9 +393,9 @@ export function KeywordScanner({
 
   return (
     <Card>
-      <div className="border-b border-[var(--border)] p-4">
+      <div className="border-b border-[var(--border)] p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-base font-semibold">Keyword scanner — {brand.name}</h3>
+          <h3 className="text-sm font-semibold">Keyword scanner — {brand.name}</h3>
           <Button
             type="button"
             variant="outline"
@@ -412,22 +410,18 @@ export function KeywordScanner({
           </Button>
         </div>
         <p className="mt-1 text-xs text-[var(--muted)]">
-          Turn a keyword on to start watching for repos that match it (name/description/code) - it
-          stays on until you turn it off, automatically re-checking for new matches over time even
-          after it runs out of results right now. Several keywords can run at once with no
-          interference between them; a repo already found by one is never re-counted by another.
-          The exact repo-search and code-search query below each keyword is editable - fix it
-          before starting if it looks wrong or too narrow.
+          Turn a keyword on to watch for matching repos - it stays on until you turn it off. Each
+          keyword&apos;s search query is editable below.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3">
         <StatTile label="Keywords" value={brand.keywords.length} />
         <StatTile label="Running now" value={runningCount} />
         <StatTile label="Discovered" value={totalDiscovered} />
       </div>
 
-      <div className="px-4 pb-3">
+      <div className="px-3 pb-2.5">
         <Input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -440,11 +434,11 @@ export function KeywordScanner({
         <table className="min-w-[640px] w-full text-sm">
           <thead className="bg-[var(--bg-subtle)] text-left text-xs uppercase tracking-wide text-[var(--muted)]">
             <tr>
-              <th className="px-4 py-2">Keyword</th>
-              <th className="px-4 py-2">Schedule</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Running for</th>
-              <th className="px-4 py-2">Discovered</th>
+              <th className="px-3 py-1.5">Keyword</th>
+              <th className="px-3 py-1.5">Schedule</th>
+              <th className="px-3 py-1.5">Status</th>
+              <th className="px-3 py-1.5">Running for</th>
+              <th className="px-3 py-1.5">Discovered</th>
             </tr>
           </thead>
           <tbody>
@@ -486,7 +480,7 @@ export function KeywordScanner({
                 return (
                   <Fragment key={keyword}>
                     <tr className="border-t border-[var(--border)] transition-colors duration-150 hover:bg-[var(--bg-subtle)]">
-                      <td className="px-4 py-2.5 font-[family-name:var(--font-mono)]">
+                      <td className="px-3 py-2 font-[family-name:var(--font-mono)]">
                         {keyword}
                         {status === 'off' && (entry?.lastError || entry?.lastMessage) ? (
                           <p
@@ -498,9 +492,9 @@ export function KeywordScanner({
                           </p>
                         ) : null}
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2">
                         {onQueue ? (
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
                             <HmsPicker
                               value={scheduleHms[keyword] ?? DEFAULT_HMS}
                               onChange={(next) =>
@@ -515,7 +509,7 @@ export function KeywordScanner({
                                 if (durationMs <= 0) return;
                                 onQueue(keyword, durationMs);
                               }}
-                              className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)]"
+                              className="shrink-0 rounded border border-[var(--border)] px-2 py-1 text-xs whitespace-nowrap hover:border-[var(--accent)]"
                               title="Add this keyword to the sequential scheduler's queue with the duration above"
                             >
                               Next →
@@ -525,10 +519,10 @@ export function KeywordScanner({
                           <span className="text-[var(--muted)]">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2">
                         <StatusBadge status={status} />
                       </td>
-                      <td className="px-4 py-2.5 text-[var(--muted)]">
+                      <td className="px-3 py-2 text-[var(--muted)]">
                         {status === 'cooldown'
                           ? `next check in ${formatElapsed((entry?.scheduledFor ?? now) - now)}`
                           : status === 'paused'
@@ -537,7 +531,7 @@ export function KeywordScanner({
                               ? formatElapsed(elapsedMs)
                               : '—'}
                       </td>
-                      <td className="px-4 py-2.5">{entry?.reposDiscovered ?? 0}</td>
+                      <td className="px-3 py-2">{entry?.reposDiscovered ?? 0}</td>
                     </tr>
                     <tr className="border-t border-[var(--border)]/50">
                       <td />
