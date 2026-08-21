@@ -81,10 +81,7 @@ export default function CommitHistoryPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Commit History"
-        subtitle="Track GitHub usernames and jump straight to everything public they've committed."
-      >
+      <AppShell title="Commit History">
         <Card className="mb-6 p-4">
           <form onSubmit={onAdd} className="flex flex-wrap items-end gap-3">
             <Field label="GitHub username" className="min-w-[200px]">

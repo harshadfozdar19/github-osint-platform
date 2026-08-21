@@ -251,10 +251,7 @@ export default function BrandsPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Monitored companies"
-        subtitle="Create, edit, and enable brands used in GitHub OSINT scan queries."
-      >
+      <AppShell title="Monitored companies">
         <Card className="mb-6 p-4">
           <h3 className="mb-3 text-sm font-semibold text-[var(--muted)]">Add company</h3>
           <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">

@@ -90,7 +90,7 @@ export default function SettingsPage() {
 
   return (
     <RequireAuth>
-      <AppShell title="Settings" subtitle="Workspace-level configuration.">
+      <AppShell title="Settings">
         <Card className="max-w-xl space-y-4 p-5">
           <div>
             <h2 className="text-sm font-semibold">GitHub token</h2>

@@ -283,7 +283,7 @@ export default function FindingDetailPage() {
 
   return (
     <RequireAuth>
-      <AppShell title="Finding detail" subtitle="Repository context, triage, and score explanation.">
+      <AppShell title="Finding detail">
         <p className="mb-4">
           <Link href="/findings" className="text-sm text-[var(--accent)] hover:underline">
             ← Back to findings

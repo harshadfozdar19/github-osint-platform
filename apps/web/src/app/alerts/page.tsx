@@ -39,10 +39,7 @@ export default function AlertsPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Alerts"
-        subtitle="In-app alerts for new Critical and High findings. Email/Slack can plug into the same service later."
-      >
+      <AppShell title="Alerts">
         {loading ? (
           <div className="space-y-3">
             <CardSkeleton count={3} />

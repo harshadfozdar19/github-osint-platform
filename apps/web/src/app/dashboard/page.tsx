@@ -42,10 +42,7 @@ export default function DashboardPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Threat overview"
-        subtitle="Live summary of OSINT findings across monitored brands."
-      >
+      <AppShell title="Threat overview">
         {hasDemo ? <DemoBanner /> : null}
         {loading ? (
           <div className="space-y-6">

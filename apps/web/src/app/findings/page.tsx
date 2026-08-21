@@ -352,7 +352,7 @@ function FindingsPageInner() {
 
   return (
     <RequireAuth>
-      <AppShell title="Findings" subtitle="Search, filter, and triage detected threats.">
+      <AppShell title="Findings">
         <Card className="mb-6 p-4">
           <form onSubmit={onFilter} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Search">

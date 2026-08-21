@@ -142,10 +142,7 @@ export default function KeywordsPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Search keywords"
-        subtitle="Manage discovery keywords used in GitHub scan query generation. Higher priority keywords are preferred."
-      >
+      <AppShell title="Search keywords">
         <Card className="mb-6 p-4">
           <Field label="Scope" className="max-w-xs">
             <Select value={scopeBrandId} onChange={(e) => setScopeBrandId(e.target.value)}>

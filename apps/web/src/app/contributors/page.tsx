@@ -126,10 +126,7 @@ export default function ContributorsPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Contributors"
-        subtitle="Every GitHub contributor seen during deep analysis, and every repo (and company) they've touched."
-      >
+      <AppShell title="Contributors">
         <Card className="mb-6 p-4">
           <form onSubmit={onFilter} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Search">

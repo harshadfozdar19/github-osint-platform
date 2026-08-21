@@ -97,10 +97,7 @@ export default function ScanDetailPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Scan detail"
-        subtitle="Live progress via SSE (polling fallback if the stream drops)."
-      >
+      <AppShell title="Scan detail">
         <p className="mb-4">
           <Link href="/scans" className="text-sm text-[var(--accent)] hover:underline">
             ← Back to scans

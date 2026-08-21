@@ -303,10 +303,7 @@ function RepositoriesPageInner() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Repositories"
-        subtitle="Every repository a keyword/GitHub search has discovered - both ones already content-analyzed and ones still waiting on 'Analyze discovered repos'. Sorted newest-discovered first. Internal audit repos (enumerated directly from a company's own trusted GitHub accounts) aren't keyword discoveries and appear on that scan's own progress page instead."
-      >
+      <AppShell title="Repositories">
         {keywordFilter ? (
           <div
             className="mb-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"

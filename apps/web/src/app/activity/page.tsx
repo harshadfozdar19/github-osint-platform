@@ -51,10 +51,7 @@ export default function ActivityPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Recent Activity"
-        subtitle="Repos recently pushed to on GitHub, and new or reopened findings from your latest scans."
-      >
+      <AppShell title="Recent Activity">
         <Card className="mb-6 flex flex-wrap items-end gap-3 p-4">
           <Field label="Time window">
             <Select value={days} onChange={(e) => setDays(e.target.value)}>

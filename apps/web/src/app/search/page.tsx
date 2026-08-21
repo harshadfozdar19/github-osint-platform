@@ -90,10 +90,7 @@ export default function SearchPage() {
 
   return (
     <RequireAuth>
-      <AppShell
-        title="Custom GitHub search"
-        subtitle="Run ad-hoc repository or code searches through the managed GitHub client."
-      >
+      <AppShell title="Custom GitHub search">
         <Card className="mb-6 p-4">
           <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
             <Field label="Query" className="min-w-[240px] flex-1">
