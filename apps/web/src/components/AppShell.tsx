@@ -18,7 +18,6 @@ import {
   Settings,
   Settings2,
   Shield,
-  Users,
   X,
 } from 'lucide-react';
 import { setToken } from '@/lib/api';
@@ -31,7 +30,6 @@ const nav = [
   { href: '/repositories', label: 'Repositories', icon: Boxes },
   { href: '/activity', label: 'Recent Activity', icon: History },
   { href: '/findings', label: 'Findings', icon: Shield },
-  { href: '/contributors', label: 'Contributors', icon: Users },
   { href: '/commit-history', label: 'Commit History', icon: GitCommitHorizontal },
   { href: '/search', label: 'Search', icon: Search },
   { href: '/alerts', label: 'Alerts', icon: AlertTriangle },

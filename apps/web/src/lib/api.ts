@@ -265,24 +265,6 @@ export interface RepositoryDeployment {
   updatedAt?: string;
 }
 
-export interface ContributorRepoSummary {
-  repositoryId: string;
-  fullName: string;
-  owner: string;
-  contributions: number;
-  /** The company (monitored brand) this repo was discovered for, if any. */
-  company?: string;
-}
-
-/** One GitHub contributor seen across this workspace's deep-analyzed repos - see the Contributors page. */
-export interface ContributorSummary {
-  login: string;
-  avatarUrl?: string;
-  totalRepositories: number;
-  companies: string[];
-  repositories: ContributorRepoSummary[];
-}
-
 /** A manually-tracked GitHub username - see the Commit History page. Stores no commit data itself, just a ready-made link to GitHub's own commit search for that author. */
 export interface TrackedGithubUser {
   _id: string;
