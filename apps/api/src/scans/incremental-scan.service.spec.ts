@@ -437,7 +437,10 @@ describe('Finding lifecycle + duplicate prevention', () => {
       findingModel as never,
       detectionModel as never,
       { deleteMany: jest.fn(), find: jest.fn() } as never,
-      { getRepositoryPagesInfo: jest.fn().mockResolvedValue(null) } as never,
+      {
+        getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+        getLatestDeployment: jest.fn().mockResolvedValue(null),
+      } as never,
       new DetectionEngine(),
       new RiskScoringService(),
       { get: () => undefined } as never,

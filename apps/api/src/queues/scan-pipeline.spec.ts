@@ -104,6 +104,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -190,6 +191,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -277,6 +279,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -388,6 +391,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -486,6 +490,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const findOneAndUpdate = jest.fn().mockResolvedValue(undefined);
     const fingerprintFind = jest.fn().mockReturnValue({
@@ -591,6 +596,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -676,6 +682,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -754,6 +761,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -832,6 +840,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
     const knownSecretModel = {
@@ -926,6 +935,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
     const knownSecretModel = {
@@ -1015,6 +1025,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
     const knownSecretModel = {
@@ -1122,6 +1133,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
     const knownSecretModel = {
@@ -1236,6 +1248,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 
@@ -1321,6 +1334,7 @@ describe('ScanPipelineService detection with mocked content', () => {
       getReadme: jest.fn(),
       getSmallTextFile: jest.fn(),
       getRepositoryPagesInfo: jest.fn().mockResolvedValue(null),
+      getLatestDeployment: jest.fn().mockResolvedValue(null),
     };
     const fingerprintModel = { deleteMany: jest.fn(), find: jest.fn() };
 

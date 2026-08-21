@@ -773,18 +773,24 @@ export class ScanPipelineService {
    * should never leave a repo with zero recorded evidence.
    */
   // Bounded so one repo's liveness pass can't run indefinitely - a handful
-  // of distinct destinations plus a Pages check is plenty of evidence.
+  // of distinct destinations plus a deployment check is plenty of evidence.
   private static readonly MAX_LIVENESS_CHECKS = 3;
 
   /**
    * The actual "proof of harm" step: independently confirms whether a
    * suspect repo is a live, active operation right now, not just source
    * code sitting unused. Checks (a) every distinct external destination its
-   * own code sends data to (see extractDataDestinations) and (b) whether it
-   * has a live GitHub Pages deployment. Both are read-only existence checks
-   * - no credentials sent, no content stored - and both fail closed on any
-   * error, so a dead/unreachable destination is silently just not reported,
-   * never a thrown error that could break the rest of the scan.
+   * own code sends data to (see extractDataDestinations) - filed under
+   * SUSPICIOUS_DESTINATION, since that's evidence about some OTHER endpoint
+   * the code talks to, not proof this repo itself is deployed - and (b)
+   * whether the repo has a real GitHub Deployment record (the exact same
+   * source `persistDeploymentAndContributors` uses for the Deployment
+   * column) that's currently reachable. Only (b) is tagged CONFIRMED_LIVE -
+   * a repo can't be "confirmed live" without an actual deployment link to
+   * point at. Both are read-only existence checks - no credentials sent, no
+   * content stored - and both fail closed on any error, so a dead/
+   * unreachable destination is silently just not reported, never a thrown
+   * error that could break the rest of the scan.
    */
   private async checkLiveness(
     ctx: RepoAnalysisContext,
@@ -797,10 +803,10 @@ export class ScanPipelineService {
       ScanPipelineService.MAX_LIVENESS_CHECKS,
     );
 
-    const [destinationLiveness, pagesInfo] = await Promise.all([
+    const [destinationLiveness, deploymentInfo] = await Promise.all([
       Promise.all(destinations.map((d) => checkUrlLiveness(d.url))),
       this.github
-        .getRepositoryPagesInfo(ctx.owner, ctx.name, { workspaceId, scanJobId })
+        .getLatestDeployment(ctx.owner, ctx.name, { workspaceId, scanJobId })
         .catch(() => null),
     ]);
 
@@ -808,9 +814,9 @@ export class ScanPipelineService {
       if (!live?.live) return;
       const d = destinations[i];
       results.push({
-        ruleId: 'confirmed-live-destination',
-        ruleName: 'Confirmed Live Destination',
-        category: ThreatCategory.CONFIRMED_LIVE,
+        ruleId: 'live-destination',
+        ruleName: 'Live External Destination',
+        category: ThreatCategory.SUSPICIOUS_DESTINATION,
         severity: Severity.CRITICAL,
         confidence: 0.9,
         evidence: `The destination "${d.hostname}" this repo's own code sends data to is live and responding right now (HTTP ${live.statusCode}) - not dormant source code, an active endpoint.`,
@@ -821,20 +827,20 @@ export class ScanPipelineService {
       });
     });
 
-    if (pagesInfo) {
-      const pagesLive = await checkUrlLiveness(pagesInfo.url);
-      if (pagesLive?.live) {
+    if (deploymentInfo) {
+      const deploymentLive = await checkUrlLiveness(deploymentInfo.url);
+      if (deploymentLive?.live) {
         results.push({
-          ruleId: 'confirmed-live-pages',
-          ruleName: 'Confirmed Live GitHub Pages Deployment',
+          ruleId: 'confirmed-live-deployment',
+          ruleName: 'Confirmed Live Deployment',
           category: ThreatCategory.CONFIRMED_LIVE,
           severity: Severity.CRITICAL,
           confidence: 0.95,
-          evidence: `This repository is deployed and live right now at ${pagesInfo.url} (GitHub Pages) - not just source code, an active, reachable site.`,
+          evidence: `This repository has a deployment and it is live right now at ${deploymentInfo.url} - not just source code, an active, reachable site.`,
           explanation:
-            'GitHub Pages deployment independently confirmed live and reachable - direct proof of an active site, not dormant code.',
+            'GitHub Deployment independently confirmed live and reachable - direct proof of an active deployment, not dormant code.',
           riskContribution: 32,
-          matchedText: pagesInfo.url,
+          matchedText: deploymentInfo.url,
         });
       }
     }
