@@ -9,7 +9,11 @@ import {
   IntentResult,
 } from './intent-provider.interface';
 import { extractJsonObject, parseIntentPayload } from './parse-intent-result';
-import { buildSystemPrompt, buildUserPrompt } from '../intent-prompt';
+import {
+  buildSystemPrompt,
+  buildUserPrompt,
+  OPENROUTER_JSON_SCHEMA,
+} from '../intent-prompt';
 
 interface OpenRouterChatResponse {
   choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
@@ -20,9 +24,26 @@ interface OpenRouterChatResponse {
  * OpenRouter - the fallback provider when Gemini's free tier isn't usable
  * (rate-limited out, key not configured, or erroring). OpenAI-compatible
  * chat-completions shape, routable to any of OpenRouter's free
- * (":free"-suffixed) open-source models via OPENROUTER_MODEL. Free models
- * don't reliably honor response_format, so parsing falls back to
- * extractJsonObject rather than assuming strict JSON.
+ * (":free"-suffixed) open-source models via OPENROUTER_MODEL. Defaults to
+ * Nemotron 3 Ultra 550B-A55B (55B active params, MoE) - NVIDIA's largest
+ * free-tier reasoning model. Picked by live-testing several free
+ * candidates against this project's own key: GLM 5.2, GPT-OSS-20B, and
+ * Gemma 4 all returned HTTP 429 "temporarily rate-limited upstream" from
+ * OpenRouter's shared free pool; the smaller Nemotron 3 Nano (3B active)
+ * worked but produced thinner reasoning and a less-calibrated
+ * needsDeepReview signal; Ultra worked reliably across repeated calls
+ * (no 429) and gave meaningfully better output - correct, more specific
+ * taxonomy category selection, richer evidence-grounded factors, and
+ * needsDeepReview only firing when genuinely warranted. It runs slower
+ * (~40s+ vs Nano's ~13s observed), hence the higher INTELLIGENCE_TIMEOUT_MS
+ * default below - this is a real per-call cost, acceptable since
+ * assessment already runs async off the queue, not on a user-facing
+ * request path. Free-tier availability shifts over time; re-check
+ * https://openrouter.ai/api/v1/models (filter `id` ending ":free") and
+ * this provider's own live behavior periodically. Requests strict
+ * json_schema mode; extractJsonObject still backstops parsing for models
+ * (including the current default) that don't formally advertise
+ * structured-output support in OpenRouter's model metadata.
  */
 @Injectable()
 export class OpenRouterIntentProvider implements IntentProvider {
@@ -49,9 +70,9 @@ export class OpenRouterIntentProvider implements IntentProvider {
     const model =
       options?.modelOverride ||
       this.config.get<string>('OPENROUTER_MODEL') ||
-      'meta-llama/llama-3.3-70b-instruct:free';
+      'nvidia/nemotron-3-ultra-550b-a55b:free';
     const timeoutMs = Number(
-      this.config.get('INTELLIGENCE_TIMEOUT_MS') || 30_000,
+      this.config.get('INTELLIGENCE_TIMEOUT_MS') || 60_000,
     );
     const userPrompt = options?.userPrompt ?? buildUserPrompt(context);
 
@@ -64,7 +85,14 @@ export class OpenRouterIntentProvider implements IntentProvider {
             { role: 'system', content: buildSystemPrompt() },
             { role: 'user', content: userPrompt },
           ],
-          response_format: { type: 'json_object' },
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'intent_assessment',
+              strict: true,
+              schema: OPENROUTER_JSON_SCHEMA,
+            },
+          },
           temperature: 0.2,
         },
         {

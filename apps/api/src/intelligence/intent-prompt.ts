@@ -49,6 +49,29 @@ export const INTENT_JSON_SCHEMA = {
   ],
 } as const;
 
+/**
+ * OpenRouter-specific strict variant of the same schema, with
+ * `additionalProperties: false` added at every object level - required for
+ * OpenAI-compatible `response_format: {type: 'json_schema', strict: true}`
+ * mode, which OpenRouter's structured-outputs-capable free models (e.g.
+ * GLM 5.2) honor. Deliberately kept separate from INTENT_JSON_SCHEMA above
+ * rather than mutating it in place: Gemini's responseSchema uses a
+ * different (OpenAPI-subset) schema dialect that doesn't recognize
+ * `additionalProperties`, so the two providers' schemas must not share the
+ * same object.
+ */
+export const OPENROUTER_JSON_SCHEMA = {
+  ...INTENT_JSON_SCHEMA,
+  properties: {
+    ...INTENT_JSON_SCHEMA.properties,
+    factors: {
+      type: 'array',
+      items: { ...FACTOR_SCHEMA, additionalProperties: false },
+    },
+  },
+  additionalProperties: false,
+} as const;
+
 export function buildSystemPrompt(): string {
   return `You are a security and brand-protection analyst reviewing evidence collected from a GitHub repository by deterministic scanners. You do not perform exhaustive secret scanning yourself - that already happened. You interpret the supplied evidence and decide what it means when considered together.
 
