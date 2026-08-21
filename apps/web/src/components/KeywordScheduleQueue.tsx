@@ -734,7 +734,14 @@ export function KeywordScheduleQueue({
               ))}
             </ol>
           </>
-        ) : null}
+        ) : (
+          <div className="mb-3 rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-center">
+            <p className="text-sm font-medium text-[var(--muted)]">Not started</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              No keyword selected yet - pick one below (or add a new one) to start the scheduler.
+            </p>
+          </div>
+        )}
 
         <div className={hasConfiguredSlots ? 'mt-4 border-t border-[var(--border)] pt-3' : ''}>
           <div className="mb-1.5 flex items-center justify-between gap-3">

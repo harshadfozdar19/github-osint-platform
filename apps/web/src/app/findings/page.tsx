@@ -476,7 +476,12 @@ export default function FindingsPage() {
 
         <RulePrecisionPanel />
 
-        {loading ? <TableSkeleton rows={6} cols={7} /> : null}
+        {/* Only the FIRST load (nothing fetched yet) shows the skeleton in
+            place of a table - a refetch (Apply filters, search, sort) keeps
+            showing the previous results (dimmed) instead of stacking the
+            skeleton on top of them, which is what made the page look
+            broken/distorted while typing a search or applying a filter. */}
+        {loading && !data ? <TableSkeleton rows={6} cols={7} /> : null}
         {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
 
         {!loading && data && data.data.length === 0 ? (
@@ -487,22 +492,27 @@ export default function FindingsPage() {
         ) : null}
 
         {data && data.data.length > 0 ? (
-          <div className="overflow-x-auto rounded-xl border border-[var(--accent-border)]/50 bg-[var(--bg-elevated)] shadow-[var(--shadow-sm)]">
+          <div
+            className={clsx(
+              'overflow-x-auto rounded-xl border border-[var(--accent-border)]/50 bg-[var(--bg-elevated)] shadow-[var(--shadow-sm)] transition-opacity duration-150',
+              loading ? 'opacity-50' : 'opacity-100',
+            )}
+          >
             <table className="min-w-[1250px] w-full text-sm">
               <thead className="bg-[var(--bg-subtle)] text-left text-[var(--muted)]">
                 <tr>
                   <th className="px-4 py-3 font-medium">Repository</th>
-                  <th className="px-4 py-3 font-medium whitespace-nowrap">Deployment</th>
-                  <th className="px-4 py-3 font-medium whitespace-nowrap">Brand</th>
-                  <th className="px-4 py-3 font-medium">Origin</th>
-                  <th className="px-4 py-3 font-medium">Severity</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
                   <th
                     className="px-4 py-3 font-medium"
                     title="Analyst classification tag - independent of Status"
                   >
                     List
                   </th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">Deployment</th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">Brand</th>
+                  <th className="px-4 py-3 font-medium">Origin</th>
+                  <th className="px-4 py-3 font-medium">Severity</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Score</th>
                   <th className="px-4 py-3 font-medium" title="Distinct curated keywords matched">
                     Keywords
@@ -547,6 +557,29 @@ export default function FindingsPage() {
                           </span>
                         ) : null}
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <Select
+                          value={f.listStatus || 'none'}
+                          onChange={(e) => updateListStatus(f._id, e.target.value)}
+                          disabled={updatingListStatus === f._id}
+                          className="!py-1 text-xs font-medium"
+                          style={
+                            f.listStatus && f.listStatus !== 'none'
+                              ? {
+                                  color: LIST_STATUS_STYLE[f.listStatus].color,
+                                  background: LIST_STATUS_STYLE[f.listStatus].bg,
+                                  borderColor: LIST_STATUS_STYLE[f.listStatus].border,
+                                }
+                              : undefined
+                          }
+                        >
+                          {LIST_STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </td>
                       <td className="px-4 py-3">
                         {repo?.deployment ? (
                           <button
@@ -573,29 +606,6 @@ export default function FindingsPage() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
                         {statusLabel(f.status)}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <Select
-                          value={f.listStatus || 'none'}
-                          onChange={(e) => updateListStatus(f._id, e.target.value)}
-                          disabled={updatingListStatus === f._id}
-                          className="!py-1 text-xs font-medium"
-                          style={
-                            f.listStatus && f.listStatus !== 'none'
-                              ? {
-                                  color: LIST_STATUS_STYLE[f.listStatus].color,
-                                  background: LIST_STATUS_STYLE[f.listStatus].bg,
-                                  borderColor: LIST_STATUS_STYLE[f.listStatus].border,
-                                }
-                              : undefined
-                          }
-                        >
-                          {LIST_STATUS_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </Select>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-[family-name:var(--font-mono)]">
                         {f.riskScore}
