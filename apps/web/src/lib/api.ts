@@ -192,6 +192,10 @@ export interface Finding {
   riskScore: number;
   /** Which system riskScore/severity currently reflect - 'ai' once a successful intent assessment has overwritten the original rule-based score, undefined/'rules' otherwise. */
   scoringSource?: 'rules' | 'ai';
+  /** Denormalized from the latest completed IntentAssessment - unset until an AI assessment has actually completed for this finding. */
+  latestIntent?: RepositoryIntent;
+  /** Denormalized from the latest completed IntentAssessment - true if the AI flagged this finding for a deep-review pass. */
+  needsDeepReview?: boolean;
   categories: string[];
   /** Derived at read-time from `categories` - not stored. */
   threatClass?: ThreatClass[];
@@ -284,16 +288,30 @@ export type RepositoryIntent =
   | 'benign'
   | 'inconclusive';
 
+export type IntentFactorDirection = 'supports_malicious' | 'supports_benign' | 'neutral';
+
+export interface IntentFactor {
+  factor: string;
+  direction: IntentFactorDirection;
+  evidenceReferences: string[];
+}
+
 /** An AI-generated intent/risk assessment for a repository - see the Findings detail page. */
 export interface IntentAssessment {
   _id: string;
   repositoryId: string;
   findingId?: string;
+  /** 'first' = cheap Tier-1 pass over curated rule-engine evidence; 'deep' = Tier-2 pass with extra bounded repo content, run only when Tier 1 was uncertain. */
+  tier: 'first' | 'deep';
   intent: RepositoryIntent;
   riskScore: number;
   confidence: number;
   reasoning: string;
   signalsUsed: string[];
+  factors: IntentFactor[];
+  missingInformation: string[];
+  needsDeepReview: boolean;
+  deepReviewedAt?: string;
   provider: string;
   model: string;
   promptVersion: string;

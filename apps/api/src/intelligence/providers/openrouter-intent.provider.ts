@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import {
+  IntentAssessOptions,
   IntentContext,
   IntentProvider,
   IntentProviderError,
@@ -34,7 +35,10 @@ export class OpenRouterIntentProvider implements IntentProvider {
     return !!this.config.get<string>('OPENROUTER_API_KEY');
   }
 
-  async assess(context: IntentContext): Promise<IntentResult> {
+  async assess(
+    context: IntentContext,
+    options?: IntentAssessOptions,
+  ): Promise<IntentResult> {
     const apiKey = this.config.get<string>('OPENROUTER_API_KEY');
     if (!apiKey) {
       throw new IntentProviderError(
@@ -43,11 +47,13 @@ export class OpenRouterIntentProvider implements IntentProvider {
       );
     }
     const model =
+      options?.modelOverride ||
       this.config.get<string>('OPENROUTER_MODEL') ||
       'meta-llama/llama-3.3-70b-instruct:free';
     const timeoutMs = Number(
       this.config.get('INTELLIGENCE_TIMEOUT_MS') || 30_000,
     );
+    const userPrompt = options?.userPrompt ?? buildUserPrompt(context);
 
     try {
       const res = await axios.post<OpenRouterChatResponse>(
@@ -56,7 +62,7 @@ export class OpenRouterIntentProvider implements IntentProvider {
           model,
           messages: [
             { role: 'system', content: buildSystemPrompt() },
-            { role: 'user', content: buildUserPrompt(context) },
+            { role: 'user', content: userPrompt },
           ],
           response_format: { type: 'json_object' },
           temperature: 0.2,

@@ -26,6 +26,7 @@ import {
   Detection,
   Finding,
   IntentAssessment,
+  IntentFactorDirection,
   Repository,
   RepositoryIntent,
 } from '@/lib/api';
@@ -166,6 +167,28 @@ function intentTone(intent: RepositoryIntent): 'danger' | 'warning' | 'success' 
   }
 }
 
+function factorDirectionLabel(direction: IntentFactorDirection): string {
+  switch (direction) {
+    case 'supports_malicious':
+      return '+ malicious';
+    case 'supports_benign':
+      return '+ benign';
+    default:
+      return 'neutral';
+  }
+}
+
+function factorDirectionTone(direction: IntentFactorDirection): 'danger' | 'success' | 'muted' {
+  switch (direction) {
+    case 'supports_malicious':
+      return 'danger';
+    case 'supports_benign':
+      return 'success';
+    default:
+      return 'muted';
+  }
+}
+
 /**
  * AI intent/risk assessment for this finding's repository, if one exists -
  * see IntelligenceService. A successful assessment already overwrote
@@ -177,6 +200,8 @@ function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
   const [assessment, setAssessment] = useState<IntentAssessment | null>(null);
   const [loading, setLoading] = useState(true);
   const [voting, setVoting] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeError, setReanalyzeError] = useState('');
 
   useEffect(() => {
     api<IntentAssessment>(`/intelligence/assessments/repository/${repositoryId}`)
@@ -207,7 +232,33 @@ function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
     }
   }
 
-  if (loading || !assessment) return null;
+  async function requestReanalysis() {
+    setReanalyzing(true);
+    setReanalyzeError('');
+    try {
+      const updated = await api<IntentAssessment>(
+        `/intelligence/assessments/repository/${repositoryId}/reanalyze`,
+        { method: 'POST' },
+      );
+      setAssessment(updated);
+    } catch (err) {
+      setReanalyzeError(err instanceof Error ? err.message : 'Re-analysis failed');
+    } finally {
+      setReanalyzing(false);
+    }
+  }
+
+  if (loading) return null;
+
+  if (!assessment) {
+    return null;
+  }
+
+  const reanalyzeButton = (
+    <Button type="button" variant="outline" size="sm" onClick={requestReanalysis} loading={reanalyzing}>
+      Request re-analysis
+    </Button>
+  );
 
   if (assessment.status === 'failed') {
     return (
@@ -218,6 +269,10 @@ function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
           {assessment.error ? `: ${assessment.error}` : '.'} The score above still reflects the
           rule-based detections.
         </p>
+        <div className="mt-3">{reanalyzeButton}</div>
+        {reanalyzeError ? (
+          <p className="mt-2 text-xs text-[var(--danger)]">{reanalyzeError}</p>
+        ) : null}
       </Card>
     );
   }
@@ -225,7 +280,12 @@ function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">AI assessment</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium">AI assessment</h3>
+          <Badge tone={assessment.tier === 'deep' ? 'accent' : 'muted'}>
+            {assessment.tier === 'deep' ? 'Deep review' : 'First review'}
+          </Badge>
+        </div>
         <span className="text-xs text-[var(--muted)]">
           {assessment.provider} · {assessment.model}
         </span>
@@ -249,6 +309,40 @@ function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
           ))}
         </div>
       ) : null}
+      {assessment.factors.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-medium text-[var(--muted)] mb-2">Contributing factors</h4>
+          <ul className="space-y-1.5">
+            {assessment.factors.map((f, i) => (
+              <li key={i} className="flex flex-wrap items-start gap-2 text-sm">
+                <Badge tone={factorDirectionTone(f.direction)} className="shrink-0">
+                  {factorDirectionLabel(f.direction)}
+                </Badge>
+                <span>
+                  {f.factor}
+                  {f.evidenceReferences.length > 0 ? (
+                    <span className="ml-1.5 font-[family-name:var(--font-mono)] text-xs text-[var(--muted)]">
+                      ({f.evidenceReferences.join(', ')})
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {assessment.missingInformation.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-medium text-[var(--muted)] mb-1.5">
+            What would sharpen this further
+          </h4>
+          <ul className="list-disc list-inside space-y-0.5 text-xs text-[var(--muted)]">
+            {assessment.missingInformation.map((m, i) => (
+              <li key={i}>{m}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <span className="text-xs text-[var(--muted)]">Do you agree with this assessment?</span>
         <Button
@@ -269,7 +363,9 @@ function AiAssessmentPanel({ repositoryId }: { repositoryId: string }) {
         >
           Disagree
         </Button>
+        <span className="ml-auto">{reanalyzeButton}</span>
       </div>
+      {reanalyzeError ? <p className="mt-2 text-xs text-[var(--danger)]">{reanalyzeError}</p> : null}
     </Card>
   );
 }

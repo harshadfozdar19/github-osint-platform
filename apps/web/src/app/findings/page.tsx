@@ -274,6 +274,9 @@ function FindingsPageInner() {
   const [repoActivity, setRepoActivity] = useState('');
   // '' = no filter, 'true' = only repos with a live deployment, 'false' = "Not defined" only.
   const [deployment, setDeployment] = useState('');
+  const [intentVerdict, setIntentVerdict] = useState('');
+  // '' = no filter, 'true' = only findings the AI flagged for a deep-review pass.
+  const [needsDeepReview, setNeedsDeepReview] = useState('');
   const [sortBy, setSortBy] = useState<'createdAt' | 'riskScore' | 'keywordMatchCount'>(
     'createdAt',
   );
@@ -304,6 +307,8 @@ function FindingsPageInner() {
       if (repoFrom) params.set('repoActiveFrom', repoFrom);
       if (repoTo) params.set('repoActiveTo', repoTo);
       if (deployment) params.set('hasDeployment', deployment);
+      if (intentVerdict) params.set('intentVerdict', intentVerdict);
+      if (needsDeepReview) params.set('needsDeepReview', needsDeepReview);
       const res = await api<Paginated<Finding>>(`/findings?${params}`);
       setData(res);
       setPage(nextPage);
@@ -470,6 +475,31 @@ function FindingsPageInner() {
                 <option value="">All</option>
                 <option value="true">Live link found</option>
                 <option value="false">Not defined</option>
+              </Select>
+            </Field>
+            <Field label="AI verdict">
+              <Select
+                value={intentVerdict}
+                onChange={(e) => setIntentVerdict(e.target.value)}
+                title="AI-assessed intent - findings never AI-assessed won't match any value here"
+              >
+                <option value="">All</option>
+                <option value="malicious_operation">Malicious operation</option>
+                <option value="impersonation">Impersonation</option>
+                <option value="credential_harvesting">Credential harvesting</option>
+                <option value="phishing_active">Phishing - active</option>
+                <option value="benign">Benign</option>
+                <option value="inconclusive">Inconclusive</option>
+              </Select>
+            </Field>
+            <Field label="Needs deep review">
+              <Select
+                value={needsDeepReview}
+                onChange={(e) => setNeedsDeepReview(e.target.value)}
+                title="Findings the AI flagged as needing a closer, Tier-2 review"
+              >
+                <option value="">All</option>
+                <option value="true">Yes</option>
               </Select>
             </Field>
             <Field label="Sort by">

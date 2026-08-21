@@ -1,7 +1,20 @@
 import {
+  FACTOR_DIRECTIONS,
+  IntentFactor,
   REPOSITORY_INTENTS,
   RepositoryIntentValue,
 } from './intent-provider.interface';
+
+export interface ParsedIntentPayload {
+  intent: RepositoryIntentValue;
+  riskScore: number;
+  confidence: number;
+  reasoning: string;
+  signalsUsed: string[];
+  factors: IntentFactor[];
+  missingInformation: string[];
+  needsDeepReview: boolean;
+}
 
 /**
  * Validates and clamps whatever the model actually returned - a forced JSON
@@ -9,13 +22,7 @@ import {
  * smaller/free-tier models that don't reliably honor structured-output
  * constraints. Never trust the raw values into the database unchecked.
  */
-export function parseIntentPayload(raw: unknown): {
-  intent: RepositoryIntentValue;
-  riskScore: number;
-  confidence: number;
-  reasoning: string;
-  signalsUsed: string[];
-} {
+export function parseIntentPayload(raw: unknown): ParsedIntentPayload {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Model response was not a JSON object');
   }
@@ -41,7 +48,49 @@ export function parseIntentPayload(raw: unknown): {
         .slice(0, 20)
     : [];
 
-  return { intent, riskScore, confidence, reasoning, signalsUsed };
+  const factors: IntentFactor[] = Array.isArray(obj.factors)
+    ? obj.factors
+        .filter(
+          (f): f is Record<string, unknown> => !!f && typeof f === 'object',
+        )
+        .map((f) => ({
+          factor:
+            typeof f.factor === 'string' ? f.factor.trim().slice(0, 300) : '',
+          direction: FACTOR_DIRECTIONS.includes(
+            f.direction as (typeof FACTOR_DIRECTIONS)[number],
+          )
+            ? (f.direction as IntentFactor['direction'])
+            : 'neutral',
+          evidenceReferences: Array.isArray(f.evidenceReferences)
+            ? f.evidenceReferences
+                .filter((r): r is string => typeof r === 'string')
+                .slice(0, 10)
+            : [],
+        }))
+        .filter((f) => f.factor.length > 0)
+        .slice(0, 10)
+    : [];
+
+  const missingInformation = Array.isArray(obj.missingInformation)
+    ? obj.missingInformation
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.trim().slice(0, 300))
+        .filter((s) => s.length > 0)
+        .slice(0, 10)
+    : [];
+
+  const needsDeepReview = obj.needsDeepReview === true;
+
+  return {
+    intent,
+    riskScore,
+    confidence,
+    reasoning,
+    signalsUsed,
+    factors,
+    missingInformation,
+    needsDeepReview,
+  };
 }
 
 function clamp(

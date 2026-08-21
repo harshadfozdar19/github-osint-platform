@@ -90,6 +90,17 @@ export class FindingsController {
     description:
       "'true' = only repos with a live deployment URL found; 'false' = only repos with none (\"not defined\")",
   })
+  @ApiQuery({
+    name: 'intentVerdict',
+    required: false,
+    description:
+      "AI-assessed intent verdict (malicious_operation/impersonation/credential_harvesting/phishing_active/benign/inconclusive) - findings never AI-assessed won't match any value here",
+  })
+  @ApiQuery({
+    name: 'needsDeepReview',
+    required: false,
+    description: "'true' = only findings the AI flagged for a deep-review pass",
+  })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'sortBy', required: false })
@@ -109,6 +120,8 @@ export class FindingsController {
     @Query('repoActiveFrom') repoActiveFrom?: string,
     @Query('repoActiveTo') repoActiveTo?: string,
     @Query('hasDeployment') hasDeployment?: string,
+    @Query('intentVerdict') intentVerdict?: string,
+    @Query('needsDeepReview') needsDeepReview?: string,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
     @Query('sortBy') sortBy?: string,
@@ -130,6 +143,9 @@ export class FindingsController {
       repoActiveTo: repoActiveTo ? new Date(repoActiveTo) : undefined,
       hasDeployment:
         hasDeployment === undefined ? undefined : hasDeployment === 'true',
+      intentVerdict,
+      needsDeepReview:
+        needsDeepReview === undefined ? undefined : needsDeepReview === 'true',
       page: Math.max(1, Number(page) || 1),
       limit: Math.min(100, Math.max(1, Number(limit) || 20)),
       sortBy: sortBy || 'createdAt',

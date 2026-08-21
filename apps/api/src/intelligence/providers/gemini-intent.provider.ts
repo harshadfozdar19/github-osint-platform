@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import {
+  IntentAssessOptions,
   IntentContext,
   IntentProvider,
   IntentProviderError,
@@ -38,7 +39,10 @@ export class GeminiIntentProvider implements IntentProvider {
     return !!this.config.get<string>('GEMINI_API_KEY');
   }
 
-  async assess(context: IntentContext): Promise<IntentResult> {
+  async assess(
+    context: IntentContext,
+    options?: IntentAssessOptions,
+  ): Promise<IntentResult> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
       throw new IntentProviderError(
@@ -46,19 +50,21 @@ export class GeminiIntentProvider implements IntentProvider {
         'GEMINI_API_KEY is not configured',
       );
     }
-    const model = this.config.get<string>('GEMINI_MODEL') || 'gemini-3.6-flash';
+    const model =
+      options?.modelOverride ||
+      this.config.get<string>('GEMINI_MODEL') ||
+      'gemini-3.6-flash';
     const timeoutMs = Number(
       this.config.get('INTELLIGENCE_TIMEOUT_MS') || 30_000,
     );
+    const userPrompt = options?.userPrompt ?? buildUserPrompt(context);
 
     try {
       const res = await axios.post<GeminiGenerateContentResponse>(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
-          contents: [
-            { role: 'user', parts: [{ text: buildUserPrompt(context) }] },
-          ],
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
           generationConfig: {
             responseMimeType: 'application/json',
             responseSchema: INTENT_JSON_SCHEMA,

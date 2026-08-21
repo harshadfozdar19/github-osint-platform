@@ -104,6 +104,20 @@ export class Finding {
   @Prop({ type: String, enum: ['rules', 'ai'], default: 'rules', index: true })
   scoringSource!: 'rules' | 'ai';
 
+  /**
+   * Denormalized from the latest completed IntentAssessment (see
+   * IntelligenceService.assess) so the findings list can filter/display by
+   * AI verdict without a $lookup into intent_assessments on every page
+   * load - same rationale as keywordMatchCount below. Unset until an AI
+   * assessment has actually completed for this finding.
+   */
+  @Prop({ type: String, index: true })
+  latestIntent?: string;
+
+  /** Denormalized from the latest completed IntentAssessment - true if the AI flagged this finding for a deep-review pass. */
+  @Prop({ default: false, index: true })
+  needsDeepReview!: boolean;
+
   @Prop({ type: [String], enum: ThreatCategory, default: [], index: true })
   categories!: ThreatCategory[];
 

@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { FACTOR_DIRECTIONS } from '../providers/intent-provider.interface';
+import type { FactorDirection } from '../providers/intent-provider.interface';
 
 export type IntentAssessmentDocument = HydratedDocument<IntentAssessment>;
 
@@ -10,6 +12,18 @@ export enum RepositoryIntent {
   PHISHING_ACTIVE = 'phishing_active',
   BENIGN = 'benign',
   INCONCLUSIVE = 'inconclusive',
+}
+
+@Schema({ _id: false })
+export class IntentFactorEntry {
+  @Prop({ required: true })
+  factor!: string;
+
+  @Prop({ type: String, required: true, enum: FACTOR_DIRECTIONS })
+  direction!: FactorDirection;
+
+  @Prop({ type: [String], default: [] })
+  evidenceReferences!: string[];
 }
 
 /**
@@ -37,6 +51,24 @@ export class IntentAssessment {
   @Prop({ type: Types.ObjectId, ref: 'Finding' })
   findingId?: Types.ObjectId;
 
+  /** 'first' = Tier-1 pass over curated evidence only; 'deep' = Tier-2 pass with extra bounded repo content. */
+  @Prop({
+    type: String,
+    required: true,
+    enum: ['first', 'deep'],
+    default: 'first',
+  })
+  tier!: 'first' | 'deep';
+
+  /**
+   * sha256 of the context this assessment was built from + the prompt
+   * version - see computeContextHash. Two assessments for the same finding
+   * sharing this value mean nothing relevant changed, so a repeat assess()
+   * call can skip the LLM round trip entirely.
+   */
+  @Prop({ required: true, index: true })
+  contextHash!: string;
+
   @Prop({ required: true, enum: RepositoryIntent })
   intent!: RepositoryIntent;
 
@@ -52,11 +84,24 @@ export class IntentAssessment {
   @Prop({ type: [String], default: [] })
   signalsUsed!: string[];
 
+  @Prop({ type: [IntentFactorEntry], default: [] })
+  factors!: IntentFactorEntry[];
+
+  @Prop({ type: [String], default: [] })
+  missingInformation!: string[];
+
+  @Prop({ default: false })
+  needsDeepReview!: boolean;
+
+  /** Set only on the 'deep' row, once a Tier-2 pass actually ran. */
+  @Prop({ type: Date })
+  deepReviewedAt?: Date;
+
   /** Which backend actually produced this - 'gemini' | 'openrouter'. */
   @Prop({ required: true })
   provider!: string;
 
-  /** The specific model id used (e.g. "gemini-2.5-flash") - providers can be reconfigured to a different model over time. */
+  /** The specific model id used (e.g. "gemini-3.6-flash") - providers can be reconfigured to a different model over time. */
   @Prop({ required: true })
   model!: string;
 
@@ -86,3 +131,5 @@ IntentAssessmentSchema.index({
   repositoryId: 1,
   createdAt: -1,
 });
+/** The idempotency lookup this hash exists for: "has this exact finding+context already been assessed?" */
+IntentAssessmentSchema.index({ findingId: 1, contextHash: 1, status: 1 });

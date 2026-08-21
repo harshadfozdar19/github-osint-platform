@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -46,6 +47,26 @@ export class IntelligenceController {
     return assessment;
   }
 
+  @Post('assessments/repository/:repositoryId/reanalyze')
+  @ApiOperation({
+    summary:
+      'Request a fresh AI assessment for a repository - safe to call repeatedly, a no-op LLM-call-wise if nothing relevant has changed since the last assessment',
+  })
+  async reanalyze(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('repositoryId') repositoryId: string,
+  ) {
+    const assessment = await this.intelligence.reanalyze(
+      tenant.workspaceId,
+      repositoryId,
+    );
+    if (!assessment)
+      throw new NotFoundException(
+        'No finding to assess for this repository, or no AI provider is configured',
+      );
+    return assessment;
+  }
+
   @Patch('assessments/:id/agreement')
   @ApiOperation({
     summary:
@@ -66,5 +87,14 @@ export class IntelligenceController {
     );
     if (!updated) throw new NotFoundException('Assessment not found');
     return updated;
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary:
+      'Assessment counts by tier/status/provider for this workspace - Tier-1 vs deep-review volume, failure rate',
+  })
+  stats(@CurrentTenant() tenant: TenantContext) {
+    return this.intelligence.stats(tenant.workspaceId);
   }
 }

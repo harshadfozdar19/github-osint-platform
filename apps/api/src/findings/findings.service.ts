@@ -70,6 +70,10 @@ export interface FindingFilters {
   repoActiveTo?: Date;
   /** true = only repos with a live deployment URL; false = only repos with none ("not defined"); undefined = no filter. */
   hasDeployment?: boolean;
+  /** AI verdict (see RepositoryIntent) denormalized onto Finding.latestIntent - undefined = no filter. */
+  intentVerdict?: string;
+  /** true = only findings the AI flagged for deep review; undefined = no filter. */
+  needsDeepReview?: boolean;
   page?: number;
   limit?: number;
   sortBy?: string;
@@ -129,6 +133,9 @@ export class FindingsService {
     if (categoriesFilter !== undefined) query.categories = categoriesFilter;
     if (filters.status) query.status = filters.status;
     if (filters.listStatus) query.listStatus = filters.listStatus;
+    if (filters.intentVerdict) query.latestIntent = filters.intentVerdict;
+    if (filters.needsDeepReview !== undefined)
+      query.needsDeepReview = filters.needsDeepReview;
     if (filters.brand) query.brandName = new RegExp(filters.brand, 'i');
     if (filters.from || filters.to) {
       query.createdAt = {};
